@@ -103,7 +103,8 @@ export interface paths {
         put?: never;
         /**
          * Step Up
-         * @description Re-verify TOTP for privileged actions (valid for a few minutes, E-SEC-03).
+         * @description Confirm privileged actions for a few minutes (E-SEC-03): the authenticator code, or the password where this
+         *     installation requires no authenticator.
          */
         post: operations["step_up_api_v1_auth_step_up_post"];
         delete?: never;
@@ -208,6 +209,27 @@ export interface paths {
         put?: never;
         /** Accept Invite */
         post: operations["accept_invite_api_v1_auth_invite_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Signup
+         * @description "Create an account" (desktop edition). The account is signed in at once but has no role, so it sees no client
+         *     until an administrator assigns one (Admin → Assignments); administrators find it on Admin → Users.
+         */
+        post: operations["signup_api_v1_auth_signup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2680,6 +2702,16 @@ export interface components {
             edition: "desktop" | "server";
             /** Self Service Reset */
             self_service_reset: boolean;
+            /**
+             * Mfa Required
+             * @default true
+             */
+            mfa_required: boolean;
+            /**
+             * Signup
+             * @default false
+             */
+            signup: boolean;
         };
         /** BackupLogIn */
         BackupLogIn: {
@@ -3592,7 +3624,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "mfa_required" | "mfa_enrollment_required";
+            status: "ok" | "mfa_required" | "mfa_enrollment_required";
             /** Csrf Token */
             csrf_token: string;
             /**
@@ -3651,6 +3683,11 @@ export interface components {
              * @default false
              */
             must_change_password: boolean;
+            /**
+             * Mfa Required
+             * @default true
+             */
+            mfa_required: boolean;
         };
         /** MfaCodeIn */
         MfaCodeIn: {
@@ -4278,7 +4315,7 @@ export interface components {
             admin_email: string;
             /**
              * Message
-             * @default FS-Platform is set up. Sign in, then scan the QR code with your authenticator app.
+             * @default FS-Platform is set up. Sign in with your e-mail and password.
              */
             message: string;
         };
@@ -4339,6 +4376,25 @@ export interface components {
             valid_from?: string | null;
             /** Valid To */
             valid_to?: string | null;
+        };
+        /** SignupIn */
+        SignupIn: {
+            /** Name */
+            name: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * StepUpIn
+         * @description Confirm a privileged action: the authenticator code, or the password where no authenticator is required.
+         */
+        StepUpIn: {
+            /** Code */
+            code?: string | null;
+            /** Password */
+            password?: string | null;
         };
         /** TenantSettingsIn */
         TenantSettingsIn: {
@@ -4632,7 +4688,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MfaCodeIn"];
+                "application/json": components["schemas"]["StepUpIn"];
             };
         };
         responses: {
@@ -4643,6 +4699,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Validation Error */
@@ -4796,6 +4870,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signup_api_v1_auth_signup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

@@ -162,7 +162,7 @@ def _session_from_request(request: Request, db: Session, *, require_mfa: bool) -
     user = db.get(User, sess.user_id)
     if user is None or user.status != "active":
         raise unauthorized("account is disabled", "account_disabled")
-    if require_mfa and not sess.mfa_verified:
+    if require_mfa and not sess.mfa_verified and get_state(request).settings.mfa_required:
         raise unauthorized("multi-factor verification required", "mfa_required")
     if request.method not in SAFE_METHODS:
         header = request.headers.get(CSRF_HEADER, "")
@@ -184,7 +184,9 @@ def _principal(request: Request, db: Session, *, require_mfa: bool, password_cha
         name=user.name,
         is_firm_user=user.is_firm_user,
         is_break_glass=user.is_break_glass,
-        mfa_verified=sess.mfa_verified,
+        # no authenticator (desktop edition): the password alone signs in; sessions keep mfa_verified False,
+        # so switching the authenticator on asks every open session for a code at its next request
+        mfa_verified=sess.mfa_verified or not st.settings.mfa_required,
         stepup_at=sess.stepup_at,
         roles=roles,
         ip=client_ip(request),
@@ -351,10 +353,12 @@ def _tenant_settings(db: Session, tenant_id: str) -> dict[str, Any]:
 
 
 def require_stepup(request: Request, p: Principal) -> str:
-    """Privileged actions: TOTP re-verified within the step-up window, plus a reason (E-SEC-03)."""
+    """Privileged actions: confirmed within the step-up window (the authenticator code, or the password where
+    no authenticator is required), plus a reason (E-SEC-03)."""
     st = get_state(request)
     if p.stepup_at is None or utcnow() - p.stepup_at > timedelta(minutes=st.settings.stepup_minutes):
-        raise forbidden("re-enter your MFA code to confirm this administrative action", "step_up_required")
+        what = "your MFA code" if st.settings.mfa_required else "your password"
+        raise forbidden(f"re-enter {what} to confirm this administrative action", "step_up_required")
     reason = (request.headers.get(REASON_HEADER) or "").strip()
     if len(reason) < 5:
         raise bad_request("reason_required", f"administrative actions need a reason in the {REASON_HEADER} header")

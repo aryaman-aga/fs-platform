@@ -12,13 +12,31 @@ export type PermissionMap = Record<string, Record<string, string>>;
 export interface MeLike {
   user: { id: string; is_firm_user: boolean; email: string; name: string; mfa_enrolled_at?: string | null; must_change_password?: boolean };
   permissions: PermissionMap;
-  assignments: { role_code: string; client_id: string | null; client_name?: string | null }[];
+  assignments: { role_code: string; client_id: string | null; client_name?: string | null; expires_at?: string | null }[];
   must_change_password?: boolean;
+  mfa_required?: boolean;
 }
 
 /** Signed in with a one-time password: the server serves nothing else until it is changed. */
 export function mustChangePassword(me: MeLike | null | undefined): boolean {
   return !!me && !!(me.must_change_password || me.user.must_change_password);
+}
+
+/** False where the installation signs in with e-mail and password only (no authenticator app), as /auth/me or
+ * /auth/options say; anything else (an older server, not loaded yet) keeps the authenticator. */
+export function mfaRequired(x: { mfa_required?: boolean } | null | undefined): boolean {
+  return x?.mfa_required !== false;
+}
+
+/** A role assignment that grants something now (time-boxed ones lapse at `expires_at`). */
+export function roleInForce(a: { expires_at?: string | null }, now: Date = new Date()): boolean {
+  return !a.expires_at || new Date(a.expires_at).getTime() > now.getTime();
+}
+
+/** Signed in, but no role in force anywhere (so no Firm Admin either), e.g. a self-service account: it sees no client
+ * until an administrator assigns one. */
+export function hasNoRole(me: MeLike | null | undefined, now: Date = new Date()): boolean {
+  return !!me && !me.assignments.some((a) => roleInForce(a, now));
 }
 
 export function permissionValue(me: MeLike | null | undefined, permission: string, clientId?: string | null): string | null {
@@ -64,6 +82,7 @@ export function navItems(me: MeLike | null | undefined): NavItem[] {
     if (can(me, "portal.view")) out.push({ to: "/portal", label: "Client portal", icon: "portal", section: "work" });
   } else {
     if (can(me, "engagement.view") || can(me, "client.manage")) out.push({ to: "/", label: "Dashboard", icon: "home", section: "work" });
+    else if (hasNoRole(me)) out.push({ to: "/", label: "Home", icon: "home", section: "work" }); // explains how to get access
     if (can(me, "engagement.view") || can(me, "client.manage")) out.push({ to: "/clients", label: "Clients & entities", icon: "clients", section: "work" });
     if (can(me, "audit.view")) out.push({ to: "/audit", label: "Audit trail", icon: "audit", section: "work" });
     if (can(me, "rules.view")) out.push({ to: "/rules", label: "Rule registry", icon: "rules", section: "work" });

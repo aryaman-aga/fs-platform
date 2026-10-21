@@ -9,6 +9,7 @@ import pytest
 from fsoffline.settings import (
     OfflineConfigError,
     OfflineSettings,
+    app_flag,
     build_env,
     default_data_dir,
     ensure_layout,
@@ -115,3 +116,50 @@ def test_package_public_key_is_stable_ed25519(tmp_path: Path) -> None:
     key = package_public_key(settings)
     assert len(base64.b64decode(key)) == 32
     assert package_public_key(settings) == key
+
+
+def _ini(settings: OfflineSettings, text: str, encoding: str = "utf-8") -> None:
+    """``<data>\\fsplatform.ini`` as an administrator writes it."""
+    (settings.data_dir / "fsplatform.ini").write_text(text, encoding=encoding)
+
+
+def test_build_env_signs_in_with_the_password_and_offers_signup_by_default(tmp_path: Path) -> None:
+    settings = OfflineSettings(data_dir=tmp_path / "d")
+    ensure_layout(settings)
+    env = build_env(settings, 8765)
+    assert env["FSWEB_MFA_REQUIRED"] == "false" and env["FSWEB_SIGNUP_ENABLED"] == "true"
+    assert env["FSWEB_AI_ENABLED"] == "false"
+    _ini(settings, "[app]\nmfa_required = true\nsignup_enabled = false\n")
+    env = build_env(settings, 8765)
+    assert env["FSWEB_MFA_REQUIRED"] == "true" and env["FSWEB_SIGNUP_ENABLED"] == "false"
+    assert env["FSWEB_AI_ENABLED"] == "false"  # the other switches keep their defaults
+    _ini(settings, "[app]\nMFA_Required = Yes\n", encoding="utf-8-sig")  # Notepad's "UTF-8 with BOM"
+    env = build_env(settings, 8765)
+    assert env["FSWEB_MFA_REQUIRED"] == "true" and env["FSWEB_SIGNUP_ENABLED"] == "true"
+    _ini(settings, "[fsplatform]\nmfa_required = true\n")  # only the [app] section counts
+    assert build_env(settings, 8765)["FSWEB_MFA_REQUIRED"] == "false"
+
+
+@pytest.mark.parametrize(("ini", "default", "expected"), [
+    (None, False, False),  # no fsplatform.ini
+    (None, True, True),
+    ("[app]\nai_enabled = true\n", True, True),  # another switch only
+    ("[app]\nmfa_required =\n", True, True),  # empty: the default
+    ("[app]\nmfa_required =   \n", False, False),
+    *[(f"[app]\nmfa_required = {v}\n", False, True) for v in ("true", "TRUE", " yes ", "on", "1", "True")],
+    *[(f"[app]\nmfa_required = {v}\n", True, False) for v in ("false", "False", "no", "OFF", "0")],
+])
+def test_app_flag(tmp_path: Path, ini: str | None, default: bool, expected: bool) -> None:
+    settings = OfflineSettings(data_dir=tmp_path)
+    if ini is not None:
+        _ini(settings, ini)
+    assert app_flag(settings, "mfa_required", default) is expected
+
+
+@pytest.mark.parametrize("value", ["ture", "enabled", "2", "maybe"])
+def test_a_switch_that_is_neither_true_nor_false_stops_the_start(tmp_path: Path, value: str) -> None:
+    settings = OfflineSettings(data_dir=tmp_path / "d")
+    ensure_layout(settings)
+    _ini(settings, f"[app]\nmfa_required = {value}\n")
+    with pytest.raises(OfflineConfigError, match="mfa_required"):
+        build_env(settings, 8765)

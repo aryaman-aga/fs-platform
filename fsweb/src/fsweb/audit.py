@@ -38,7 +38,8 @@ EVENT_CLASSES = {
     "fixes": ["fixplan.proposed", "fixplan.approved", "fixplan.applied", "edit.applied"],
     "ai": ["ai.payload_approved", "ai.call_sent", "ai.call_completed"],
     "render": ["render.completed", "engagement.released", "engagement.locked", "engagement.unlocked"],
-    "users": ["user.invited", "user.disabled", "assignment.created", "role.permissions_changed"],
+    "users": ["user.invited", "user.signed_up", "user.disabled", "assignment.created",
+              "role.permissions_changed"],
     "backup": ["backup.recorded", "backup.restore_drill"],
 }
 

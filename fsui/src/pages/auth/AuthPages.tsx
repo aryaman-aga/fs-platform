@@ -1,5 +1,6 @@
 /** Sign-in, MFA verification / enrolment, password reset, the forced change of a one-time password and invitation
- * acceptance (05 §1). */
+ * acceptance (05 §1). Where the installation requires no authenticator (desktop edition), the password alone signs in
+ * and nothing here mentions codes; "Create an account" is SignupPage. */
 import { useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
@@ -9,21 +10,27 @@ import { ApiError, api, setCsrfToken } from "@/api/client";
 import { qk, useAuthOptions } from "@/api/hooks";
 import type { AuthOkOut, LoginOut, MfaEnrollOut, OkOut, RecoveryCodesOut } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { mustChangePassword } from "@/auth/permissions";
+import { mfaRequired, mustChangePassword } from "@/auth/permissions";
 import { Button, ErrorNotice, Notice, Spinner, TextInput } from "@/components/ui";
 import { AuthLayout } from "@/layout/AuthLayout";
 
 const PASSWORD_HINT = "At least 12 characters; common or breached passwords, and ones containing your name, are refused.";
 
+/** Where to go once signed in: back to the screen that sent the user to sign in, or home. */
+function useDestination(): string {
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+  return from && !from.startsWith("/login") && !from.startsWith("/mfa") ? from : "/";
+}
+
 function useAfterLogin() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from;
+  const to = useDestination();
   return async () => {
     await qc.invalidateQueries({ queryKey: qk.me });
     await qc.refetchQueries({ queryKey: qk.me });
-    navigate(from && !from.startsWith("/login") && !from.startsWith("/mfa") ? from : "/", { replace: true });
+    navigate(to, { replace: true });
   };
 }
 
@@ -33,13 +40,18 @@ export function LoginPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState("");
+  const to = useDestination();
+  const after = useAfterLogin();
+  // the setup page and "Sign in instead" on the sign-up page bring the e-mail along
+  const prefill = (location.state as { email?: string } | null)?.email ?? "";
+  const [email, setEmail] = useState(prefill);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  if (status === "ready") return <Navigate to="/" replace />;
+  if (status === "ready") return <Navigate to={to} replace />;
   if (status === "mfa" && me) return <Navigate to={me.user.mfa_enrolled_at ? "/mfa" : "/mfa/enroll"} replace />;
+  const mfa = options.data ? mfaRequired(options.data) : null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -49,6 +61,11 @@ export function LoginPage() {
       const out = await api<LoginOut>("/auth/login", { method: "POST", body: { email, password }, quiet401: true });
       setCsrfToken(out.csrf_token);
       setNotice(null);
+      if (out.status === "ok") {
+        // no authenticator on this installation: the password signed in (a one-time password still leads to the change form)
+        await after();
+        return;
+      }
       await qc.refetchQueries({ queryKey: qk.me });
       navigate(out.status === "mfa_required" ? "/mfa" : "/mfa/enroll", { replace: true, state: location.state });
     } catch (err) {
@@ -62,8 +79,8 @@ export function LoginPage() {
     <AuthLayout title="FS-Platform" tag="Ind AS financial statements — preparation and review">
       {notice ? <Notice tone="warn">{notice}</Notice> : null}
       <form className="stack" onSubmit={(e) => void submit(e)} aria-label="Sign in">
-        <TextInput label="E-mail" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
-        <TextInput label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        <TextInput label="E-mail" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus={!prefill} />
+        <TextInput label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} autoFocus={!!prefill} />
         <ErrorNotice error={error} title="Sign-in failed" />
         <Button type="submit" variant="primary" busy={busy}>
           Sign in
@@ -73,7 +90,15 @@ export function LoginPage() {
         <Link to="/forgot-password">Forgot password?</Link>
         {options.data?.sso ? <a href="/api/v1/auth/oidc/login">Firm single sign-on</a> : null}
       </div>
-      <p className="small faint">Multi-factor authentication is required for every account. Activity is recorded in the audit trail.</p>
+      {options.data?.signup ? (
+        <div className="row" style={{ justifyContent: "center" }}>
+          <span className="muted">New here?</span>
+          <Link to="/signup" className="btn">
+            Create an account
+          </Link>
+        </div>
+      ) : null}
+      <p className="small faint">{mfa ? "Multi-factor authentication is required for every account. " : ""}Activity is recorded in the audit trail.</p>
     </AuthLayout>
   );
 }
@@ -257,7 +282,8 @@ export function ForgotPasswordPage() {
         <Notice>Ask your administrator to reset your password.</Notice>
         <p className="small muted">
           A Firm Admin creates a one-time reset link under Administration → Users → Reset password and gives it to you
-          {options.data.edition === "desktop" ? "; it opens on this PC." : "."} If you also lost your authenticator app, ask them to reset MFA too.
+          {options.data.edition === "desktop" ? "; it opens on this PC." : "."}
+          {mfaRequired(options.data) ? " If you also lost your authenticator app, ask them to reset MFA too." : null}
         </p>
         <Link to="/login" className="small">
           Back to sign in

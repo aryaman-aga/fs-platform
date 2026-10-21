@@ -198,13 +198,13 @@
           "auth"
         ],
         "summary": "Step Up",
-        "description": "Re-verify TOTP for privileged actions (valid for a few minutes, E-SEC-03).",
+        "description": "Confirm privileged actions for a few minutes (E-SEC-03): the authenticator code, or the password where this\ninstallation requires no authenticator.",
         "operationId": "step_up_api_v1_auth_step_up_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/MfaCodeIn"
+                "$ref": "#/components/schemas/StepUpIn"
               }
             }
           },
@@ -217,6 +217,26 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OkOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -388,6 +408,88 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OkOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signup",
+        "description": "\"Create an account\" (desktop edition). The account is signed in at once but has no role, so it sees no client\nuntil an administrator assigns one (Admin \u2192 Assignments); administrators find it on Admin \u2192 Users.",
+        "operationId": "signup_api_v1_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -7793,6 +7895,16 @@
           "self_service_reset": {
             "type": "boolean",
             "title": "Self Service Reset"
+          },
+          "mfa_required": {
+            "type": "boolean",
+            "title": "Mfa Required",
+            "default": true
+          },
+          "signup": {
+            "type": "boolean",
+            "title": "Signup",
+            "default": false
           }
         },
         "type": "object",
@@ -10599,6 +10711,7 @@
           "status": {
             "type": "string",
             "enum": [
+              "ok",
               "mfa_required",
               "mfa_enrollment_required"
             ],
@@ -10741,6 +10854,11 @@
             "type": "boolean",
             "title": "Must Change Password",
             "default": false
+          },
+          "mfa_required": {
+            "type": "boolean",
+            "title": "Mfa Required",
+            "default": true
           }
         },
         "type": "object",
@@ -12497,7 +12615,7 @@
           "message": {
             "type": "string",
             "title": "Message",
-            "default": "FS-Platform is set up. Sign in, then scan the QR code with your authenticator app."
+            "default": "FS-Platform is set up. Sign in with your e-mail and password."
           }
         },
         "type": "object",
@@ -12714,6 +12832,70 @@
           "role"
         ],
         "title": "SignatoryOut"
+      },
+      "SignupIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "password"
+        ],
+        "title": "SignupIn"
+      },
+      "StepUpIn": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StepUpIn",
+        "description": "Confirm a privileged action: the authenticator code, or the password where no authenticator is required."
       },
       "TenantSettingsIn": {
         "properties": {

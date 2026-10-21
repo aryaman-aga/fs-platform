@@ -43,7 +43,7 @@ AI provider (gateway only); firm network ↔ render pool; laptop ↔ firm server
 
 | ID | STRIDE | Threat | Mitigation | Requirement / control |
 |---|---|---|---|---|
-| T16 | Spoofing | Password guessing / reuse | argon2id, 12+ characters, breached-password list, lockout, mandatory TOTP, SSO for firm users | 05 §1, E-SEC-01 |
+| T16 | Spoofing | Password guessing / reuse | argon2id, 12+ characters, breached-password list, lockout, mandatory TOTP on the firm server (the desktop edition's password-only default: T52), SSO for firm users | 05 §1, E-SEC-01 |
 | T17 | Spoofing | Stolen session cookie used later | idle 30/60 min, absolute 12 h, sign-out-all, sessions revoked on disable | 05 §1 |
 | T18 | Elevation of privilege | Privileged account misuse | just-in-time elevation approved by another admin, sealed break-glass with alerting, System Admin has no client-data access | E-SEC-03 |
 | T19 | Repudiation | Disputed login | login, MFA and failure events in the audit trail; NTP-synchronised timestamps | 06 §4, E-SEC-05 |
@@ -119,6 +119,7 @@ AI provider (gateway only); firm network ↔ render pool; laptop ↔ firm server
 | T49 | Elevation of privilege | A lapsed elevation, a disabled account or a former reviewer still counts as holding a role (access-review decisions, last-administrator guard) | expired and disabled assignments are ignored everywhere roles are resolved; a named reviewer decides only while holding a reviewing role; revoking follows the rank rules of granting | C14, E-SEC-04 |
 | T50 | Tampering | Installer or bundled packages replaced before or during the build | downloads pinned by SHA-256 (LibreOffice checksum published by TDF, VC++ runtime checksum in Microsoft's URL); Python packages from a hash-locked requirements file; copyleft or non-Windows binaries fail the build; installer to be code-signed before distribution (unsigned builds trigger SmartScreen) | E-SEC-12 |
 | T51 | Denial of service / repudiation | Sole administrator locked out (forgotten password, lost phone) | recovery codes; administrators reset each other's password or MFA (one-time links, audited); FS-Platform Recovery for the PC's Windows administrator, audited | E-SEC-03 |
+| T52 | Spoofing / elevation of privilege | Desktop defaults: sign-in with the password alone, and *Create an account* for anyone who can use the PC — a guessed, reused or overlooked password signs in as its owner (also a sealed break-glass account); an unknown person, or another program on the PC, creates an account | **loopback only** (unreachable from the network; Host and Origin checked against DNS rebinding, T48); to use the PC people need a **Windows account**, and only the ***FS-Platform Users*** group may start FS-Platform and open its data folder; **password policy** (12+ characters, breached-password list, not the name or e-mail) and **lockout** for 15 minutes after 5 failures (wrong passwords at a confirmation count too and, at the fifth, sign the account out everywhere; no confirmation while locked); sign-up and confirmation rate-limited; **privileged actions need the password again** after 5 minutes, plus a reason; **a new account has no role** and sees no client or firm data until an administrator assigns one (server-side permission checks); every sign-in, sign-up (`user.signed_up`), confirmation and failure in the **audit trail**; break-glass use still raises its alert. Residual: anyone who learns a password, or works at a PC left signed in, acts as that person. **Recommendation:** on a PC many people use, an administrator switches the authenticator on (`mfa_required = true` in `fsplatform.ini`; sessions already open are asked for a code at once) and sign-up off once everyone has an account (`signup_enabled = false`). The switches sit in the data folder (Administrators and the *FS-Platform Users* group, who can read the database anyway, T45); a value that is neither true nor false stops the start; the firm server refuses both relaxations (`FSWEB_MFA_REQUIRED`, `FSWEB_SIGNUP_ENABLED` in prod) | E-SEC-01, E-SEC-03 |
 
 ## Residual risks accepted for go-live
 
@@ -128,5 +129,6 @@ AI provider (gateway only); firm network ↔ render pool; laptop ↔ firm server
 | Single site until HA / DR site | off-site object-locked backups, tested rebuild (RTO 4 h) | T2 warm DR site |
 | Insider with legitimate access copies data | watermarks, download rights, audit trail, access reviews | DLP rules and SIEM alerts (T2) |
 | Supply-chain compromise of a dependency | pinned hashes, SBOM, pip-audit / npm audit, Trivy, signed images | continuous |
+| Desktop edition signs in with the password alone and offers *Create an account* by default (T52) | one PC, loopback only, Windows accounts, lockout, password step-up, no access without a role, audit trail; one switch adds the authenticator | per PC: switch the authenticator on where many people use it |
 
-_47 threats catalogued._
+_52 threats catalogued._

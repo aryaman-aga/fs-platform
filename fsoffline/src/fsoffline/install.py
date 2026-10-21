@@ -72,7 +72,8 @@ def load_install_config(root: Path | None = None) -> InstallConfig:
 
 
 def load_data_config(data_dir: Path) -> dict[str, str]:
-    """Administrator-editable settings in ``<data>\\fsplatform.ini`` ([app] section), e.g. ``ai_enabled = true``."""
+    """Administrator-editable settings in ``<data>\\fsplatform.ini`` (``[app]``, e.g. ``ai_enabled = true``),
+    edited by hand: a UTF-8 byte-order mark (Notepad's "UTF-8 with BOM") is accepted."""
     cp = configparser.ConfigParser(interpolation=None)
-    cp.read(data_dir / INI_NAME, encoding="utf-8")
+    cp.read(data_dir / INI_NAME, encoding="utf-8-sig")
     return dict(cp["app"]) if cp.has_section("app") else {}

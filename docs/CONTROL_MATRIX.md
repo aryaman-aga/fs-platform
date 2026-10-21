@@ -255,9 +255,11 @@ Every link is checked by `python tools/traceability.py --check`.
 - **ISO/IEC 27001:2022 Annex A:** 5.15, 5.16, 5.18, 8.2
 - **SOC 2:** CC6.1, CC6.2, CC6.3
 - **SQC 1 / SQM 1:** resources; monitoring
-- **Enforced by:** [`admin.py::invite_user`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::disable_user`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::create_assignment`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::revoke_assignment`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::approve_elevation`](../fsweb/src/fsweb/routers/admin.py)
+- **Enforced by:** [`admin.py::invite_user`](../fsweb/src/fsweb/routers/admin.py), [`auth.py::signup`](../fsweb/src/fsweb/routers/auth.py), [`admin.py::disable_user`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::create_assignment`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::revoke_assignment`](../fsweb/src/fsweb/routers/admin.py), [`admin.py::approve_elevation`](../fsweb/src/fsweb/routers/admin.py)
 - **Tested by:**
   - [`test_auth.py::test_invite_flow_single_use_and_expiry`](../fsweb/tests/test_auth.py)
+  - [`test_password_sign_in.py::test_a_new_account_is_signed_in_but_sees_nothing`](../fsweb/tests/test_password_sign_in.py)
+  - [`test_password_sign_in.py::test_an_administrator_gives_the_new_account_access`](../fsweb/tests/test_password_sign_in.py)
   - [`test_auth.py::test_disabled_user_loses_access_immediately`](../fsweb/tests/test_auth.py)
   - [`test_auth.py::test_jit_elevation_needs_another_admin`](../fsweb/tests/test_auth.py)
   - [`test_controls.py::test_assignment_opens_and_revocation_closes_engagement_access`](../fsweb/tests/test_controls.py)
@@ -284,6 +286,7 @@ Every link is checked by `python tools/traceability.py --check`.
 - **Enforced by:** [`settings.py::validate_for_env`](../fsweb/src/fsweb/settings.py), [`operations.md`](../ops/itgc/operations.md)
 - **Tested by:**
   - [`test_platform.py::test_production_like_settings_fail_closed`](../fsweb/tests/test_platform.py)
+  - [`test_password_sign_in.py::test_the_firm_server_refuses_password_only_sign_in_and_signup`](../fsweb/tests/test_password_sign_in.py)
 - **Note:** Separate development, staging and production environments are an operational procedure (T2); the code enforces fail-closed production settings.
 
 ## E-ITGC-06 — Control matrix and evidence pack

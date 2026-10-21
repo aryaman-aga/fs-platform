@@ -215,3 +215,38 @@ def test_full_flow_as_runtime_role_under_rls(pg: dict[str, str], tmp_path: Path,
             assert db.query(User).count() >= 8
     finally:
         w.state.db.dispose()
+
+
+def test_signup_and_password_sign_in_under_rls(pg: dict[str, str], tmp_path: Path,
+                                                totp_clock: FakeClock) -> None:
+    """"Create an account" and sign-in without an authenticator, the API connected as fsweb_app: the firm is
+    found in the 'auth' scope; the account, its session and the audit events are written under RLS."""
+    from fastapi.testclient import TestClient
+
+    from tests.conftest import PASSWORD, Api
+
+    w = build_world(tmp_path, totp_clock, database_url=pg["owner"], app_database_url=pg["app"],
+                    mfa_required=False, signup_enabled=True)
+    try:
+        c = TestClient(w.app)
+        new = {"email": "nisha@corvus.test", "name": "Nisha Kulkarni", "password": "Quayside-Ledger-Otter-62"}
+        r = c.post("/api/v1/auth/signup", json=new)
+        assert r.status_code == 201 and r.json()["status"] == "ok", r.text
+        nisha = Api(c, r.json()["csrf_token"])
+        assert nisha.get("/api/v1/clients").json() == [] and nisha.get("/api/v1/engagements").json() == []
+        uid = nisha.get("/api/v1/auth/me").json()["user"]["id"]
+        admin_client = TestClient(w.app)
+        r = admin_client.post("/api/v1/auth/login", json={"email": "firm_admin@test.fs",
+                                                          "password": PASSWORD})
+        assert r.json()["status"] == "ok"
+        admin = Api(admin_client, r.json()["csrf_token"])
+        assert admin.post("/api/v1/auth/step-up", json={"password": PASSWORD}).status_code == 200
+        grant = {"user_id": uid, "role_code": "manager", "client_id": w.client_id}
+        r = admin.post("/api/v1/admin/assignments", json=grant)
+        assert r.status_code == 201, r.text
+        assert [x["id"] for x in nisha.get("/api/v1/clients").json()] == [w.client_id]
+        assert admin.get("/api/v1/audit/verify").json()["ok"] is True
+        actions = {e["action"] for e in admin.get("/api/v1/audit", params={"user_id": uid}).json()["items"]}
+        assert {"user.signed_up", "auth.login"} <= actions
+    finally:
+        w.state.db.dispose()

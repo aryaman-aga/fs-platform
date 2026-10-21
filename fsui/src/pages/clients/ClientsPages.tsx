@@ -8,14 +8,16 @@ import { api } from "@/api/client";
 import { qk, useClients, useEngagements } from "@/api/hooks";
 import type { ClientOut, EngagementOut, EntityOut, SignatoryOut } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
+import { hasNoRole } from "@/auth/permissions";
 import { DataGrid } from "@/components/DataGrid";
 import { Modal } from "@/components/Modal";
+import { NoRoleYet } from "@/components/NoRoleYet";
 import { useToast } from "@/components/Toast";
 import { Button, Card, Chip, EmptyState, EngagementStatusChip, ErrorNotice, KeyValue, PageHeader, SelectInput, Spinner, TextInput } from "@/components/ui";
 import { formatDate, titleCase } from "@/lib/format";
 
 export function ClientsPage() {
-  const { can } = useAuth();
+  const { me, can } = useAuth();
   const clients = useClients();
   const [creating, setCreating] = useState(false);
   return (
@@ -39,7 +41,7 @@ export function ClientsPage() {
             label="Clients"
             rows={clients.data ?? []}
             rowKey={(c) => c.id}
-            empty="No clients yet."
+            empty={hasNoRole(me) ? <NoRoleYet /> : "No clients yet."}
             columns={[
               { key: "name", header: "Client", render: (c) => <Link to={`/clients/${c.id}`}>{c.name}</Link>, sortValue: (c) => c.name },
               { key: "group", header: "Group", render: (c) => c.group_name ?? "—", sortValue: (c) => c.group_name ?? "" },

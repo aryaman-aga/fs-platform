@@ -8,6 +8,16 @@ import { AcceptInvitePage, ForgotPasswordPage, LoginPage } from "./AuthPages";
 
 const SERVER = { setup_required: false, sso: false, edition: "server", self_service_reset: true };
 const DESKTOP = { setup_required: false, sso: false, edition: "desktop", self_service_reset: false };
+// the desktop edition with e-mail and password only, and "Create an account"
+const NO_MFA = { ...DESKTOP, mfa_required: false, signup: true };
+const SIGNED_OUT = () => reply(401, { error: { code: "unauthenticated", message: "sign in first" } });
+const LOGIN = { csrf_token: "csrf-1", expires_at: "2026-10-22T12:00:00Z" };
+
+function signIn(email = "staff@demo.fs.test", password = "Harbour-Ledger-Spruce-41") {
+  fireEvent.change(screen.getByLabelText("E-mail"), { target: { value: email } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: password } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+}
 
 describe("Sign-in options", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -36,6 +46,27 @@ describe("Sign-in options", () => {
     expect(calls.some((c) => c.url.includes("/auth/password/forgot"))).toBe(false);
   });
 
+  it("offers “Create an account” only where the installation allows it", async () => {
+    mockApi({ "/api/v1/auth/options": NO_MFA });
+    const { unmount } = renderWithProviders(<LoginPage />, { route: "/login" });
+    expect(await screen.findByRole("link", { name: "Create an account" })).toHaveAttribute("href", "/signup");
+    expect(screen.getByText("New here?")).toBeInTheDocument();
+    unmount();
+    vi.unstubAllGlobals();
+
+    mockApi({ "/api/v1/auth/options": DESKTOP });
+    renderWithProviders(<LoginPage />, { route: "/login" });
+    expect(await screen.findByText(/Multi-factor authentication is required/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create an account" })).toBeNull();
+  });
+
+  it("without an authenticator, forgot-password does not mention one", async () => {
+    mockApi({ "/api/v1/auth/options": NO_MFA });
+    renderWithProviders(<ForgotPasswordPage />, { route: "/forgot-password" });
+    expect(await screen.findByText("Ask your administrator to reset your password.")).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent(/authenticator|MFA/);
+  });
+
   it("with e-mail, forgot-password sends a reset link", async () => {
     const { calls } = mockApi({ "/api/v1/auth/options": SERVER, "/api/v1/auth/password/forgot": { ok: true, message: "if the account exists, a reset link has been sent" } });
     renderWithProviders(<ForgotPasswordPage />, { route: "/forgot-password" });
@@ -43,6 +74,75 @@ describe("Sign-in options", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send reset link" }));
     expect(await screen.findByText("if the account exists, a reset link has been sent")).toBeInTheDocument();
     expect(calls.some((c) => c.url.endsWith("/auth/password/forgot") && c.init?.method === "POST")).toBe(true);
+  });
+});
+
+describe("Signing in", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("without an authenticator, the password signs in and opens the screen the user was heading for", async () => {
+    let signedIn = false;
+    const { calls } = mockApi({
+      "/api/v1/auth/options": NO_MFA,
+      "/api/v1/auth/me": () => (signedIn ? { ...ME, mfa_required: false } : SIGNED_OUT()),
+      "/api/v1/auth/login": () => {
+        signedIn = true;
+        return { ...LOGIN, status: "ok" };
+      },
+      "/api/v1/clients": [],
+    });
+    renderWithProviders(<AppRoutes />, { route: "/clients" });
+
+    expect(await screen.findByRole("form", { name: "Sign in" })).toBeInTheDocument();
+    // e-mail and password only: nothing about authenticators, QR codes or codes
+    expect(document.body).not.toHaveTextContent(/authenticator|multi-factor|MFA|QR|code/i);
+    signIn();
+
+    expect(await screen.findByRole("heading", { name: "Clients & entities" })).toBeInTheDocument();
+    expect(JSON.parse(String(calls.find((c) => c.url.endsWith("/auth/login"))?.init?.body))).toEqual({ email: "staff@demo.fs.test", password: "Harbour-Ledger-Spruce-41" });
+    expect(calls.some((c) => c.url.includes("/auth/mfa"))).toBe(false);
+  });
+
+  it("without an authenticator, a one-time password still leads to the change form", async () => {
+    let signedIn = false;
+    mockApi({
+      "/api/v1/auth/options": NO_MFA,
+      "/api/v1/auth/me": () => (signedIn ? { ...ME, mfa_required: false, must_change_password: true, user: { ...ME.user, must_change_password: true } } : SIGNED_OUT()),
+      "/api/v1/auth/login": () => {
+        signedIn = true;
+        return { ...LOGIN, status: "ok" };
+      },
+    });
+    renderWithProviders(<AppRoutes />, { route: "/login" });
+    await screen.findByRole("form", { name: "Sign in" });
+    signIn();
+    expect(await screen.findByText("Choose your own password")).toBeInTheDocument();
+  });
+
+  it("without an authenticator, a half-finished sign-in starts again at the sign-in page, never the code step", async () => {
+    // a session from before the authenticator was switched off: password verified, no permissions yet
+    mockApi({ "/api/v1/auth/options": NO_MFA, "/api/v1/auth/me": { ...ME, mfa_required: false, permissions: {} } });
+    renderWithProviders(<AppRoutes />, { route: "/mfa" });
+    expect(await screen.findByRole("form", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.queryByText("Verify it's you")).toBeNull();
+    expect(screen.queryByLabelText("Authenticator code")).toBeNull();
+  });
+
+  it("with an authenticator, the password leads to the code step as before", async () => {
+    let passwordOk = false;
+    mockApi({
+      "/api/v1/auth/options": SERVER,
+      "/api/v1/auth/me": () => (passwordOk ? { ...ME, permissions: {} } : SIGNED_OUT()),
+      "/api/v1/auth/login": () => {
+        passwordOk = true;
+        return { ...LOGIN, status: "mfa_required" };
+      },
+    });
+    renderWithProviders(<AppRoutes />, { route: "/login" });
+    expect(await screen.findByText(/Multi-factor authentication is required for every account/)).toBeInTheDocument();
+    signIn();
+    expect(await screen.findByText("Verify it's you")).toBeInTheDocument();
+    expect(screen.getByLabelText("Authenticator code")).toBeInTheDocument();
   });
 });
 

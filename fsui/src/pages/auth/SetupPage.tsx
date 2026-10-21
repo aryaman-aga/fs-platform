@@ -1,8 +1,9 @@
 /**
  * First run (desktop edition): the firm and its first administrator are created here, on the PC where FS-Platform
  * runs — no command line, nothing printed. The launcher opens `/setup#token=…` with a one-time token; the fragment
- * never leaves the browser except in the setup request itself. The administrator then signs in and enrols an
- * authenticator app with a QR code (the usual MFA enrolment).
+ * never leaves the browser except in the setup request itself. The administrator then signs in and, where the
+ * installation requires one, enrols an authenticator app with a QR code (the usual MFA enrolment); otherwise the
+ * e-mail and password are all they need.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
@@ -12,6 +13,7 @@ import { Link, useLocation } from "react-router-dom";
 import { api } from "@/api/client";
 import { qk, useAuthOptions } from "@/api/hooks";
 import type { AuthOptionsOut, SetupIn, SetupOut } from "@/api/types";
+import { mfaRequired } from "@/auth/permissions";
 import { Button, Checkbox, ErrorNotice, Notice, Spinner, TextInput } from "@/components/ui";
 import { AuthLayout } from "@/layout/AuthLayout";
 
@@ -26,24 +28,38 @@ export function SetupPage() {
   const qc = useQueryClient();
   const { hash } = useLocation();
   const token = useMemo(() => setupTokenFrom(hash), [hash]);
-  const [f, setF] = useState({ firm_name: "", admin_name: "", admin_email: "", password: "", confirm: "", works_on_engagements: false });
+  // works_on_engagements stays null until the box is clicked: see `works` below
+  const [f, setF] = useState({ firm_name: "", admin_name: "", admin_email: "", password: "", confirm: "", works_on_engagements: null as boolean | null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [done, setDone] = useState<SetupOut | null>(null);
   const desktop = options.data?.edition === "desktop";
+  const mfa = mfaRequired(options.data);
+  const signup = !!options.data?.signup;
 
   if (done) {
     return (
       <AuthLayout title="Your firm is ready" tag={desktop ? "Desktop edition · this PC" : undefined}>
-        <Notice tone="ok">FS-Platform is set up for your firm.</Notice>
+        <Notice tone="ok">{done.message || "FS-Platform is set up for your firm."}</Notice>
         <ol className="small stack" style={{ paddingLeft: 18, margin: 0 }}>
           <li>
             Sign in as <strong>{done.admin_email}</strong> with the password you chose.
           </li>
-          <li>Scan the QR code with an authenticator app (Microsoft or Google Authenticator) and keep the recovery codes safe.</li>
-          <li>Invite your colleagues under Administration → Users; each one sets a password and enrols their own authenticator.</li>
+          {mfa ? (
+            <>
+              <li>Scan the QR code with an authenticator app (Microsoft or Google Authenticator) and keep the recovery codes safe.</li>
+              <li>Invite your colleagues under Administration → Users; each one sets a password and enrols their own authenticator.</li>
+            </>
+          ) : signup ? (
+            <li>
+              Colleagues create their own account with “Create an account” on the sign-in page. Then give each of them a role under
+              Administration → Assignments, so that they see their clients.
+            </li>
+          ) : (
+            <li>Invite your colleagues under Administration → Users; each one chooses their own password.</li>
+          )}
         </ol>
-        <Link to="/login" className="btn primary" style={{ textAlign: "center" }}>
+        <Link to="/login" state={{ email: done.admin_email }} className="btn primary" style={{ textAlign: "center" }}>
           Sign in
         </Link>
       </AuthLayout>
@@ -66,6 +82,9 @@ export function SetupPage() {
   }
 
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
+  // The desktop edition starts ticked: a small firm's administrator usually prepares or reviews the statements too, and
+  // unticked they would create a client they cannot work on. Elsewhere it starts unticked.
+  const works = f.works_on_engagements ?? desktop;
   const mismatch = f.confirm.length > 0 && f.confirm !== f.password;
   const ready = f.firm_name.trim() && f.admin_name.trim() && f.admin_email.trim() && f.password.length >= 12 && f.confirm === f.password;
   const submit = async (e: FormEvent) => {
@@ -79,7 +98,7 @@ export function SetupPage() {
         admin_name: f.admin_name.trim(),
         admin_email: f.admin_email.trim(),
         password: f.password,
-        works_on_engagements: f.works_on_engagements,
+        works_on_engagements: works,
         setup_token: token,
       };
       const out = await api<SetupOut>("/setup", { method: "POST", body, quiet401: true });
@@ -94,7 +113,10 @@ export function SetupPage() {
 
   return (
     <AuthLayout title="Set up FS-Platform" tag={desktop ? "Desktop edition · runs on this PC only" : "First run"}>
-      <p className="small">Create your firm and its administrator account. Colleagues are invited afterwards and get their own sign-in.</p>
+      <p className="small">
+        Create your firm and its administrator account.{" "}
+        {signup ? "Colleagues then create their own account on the sign-in page." : "Colleagues are invited afterwards and get their own sign-in."}
+      </p>
       <form className="stack" onSubmit={(e) => void submit(e)} aria-label="Set up the firm">
         <TextInput label="Firm name" required value={f.firm_name} onChange={(e) => set("firm_name", e.target.value)} autoComplete="organization" autoFocus />
         <TextInput label="Your name" required value={f.admin_name} onChange={(e) => set("admin_name", e.target.value)} autoComplete="name" />
@@ -110,7 +132,7 @@ export function SetupPage() {
           hint="At least 12 characters; common or breached passwords, and ones containing your name or e-mail name, are refused."
         />
         <TextInput label="Repeat password" type="password" required autoComplete="new-password" value={f.confirm} onChange={(e) => set("confirm", e.target.value)} error={mismatch ? "The passwords differ." : undefined} />
-        <Checkbox label="I also work on engagements (prepare or review statements)" checked={f.works_on_engagements} onChange={(e) => set("works_on_engagements", e.target.checked)} />
+        <Checkbox label="I also work on engagements (prepare or review statements)" checked={works} onChange={(e) => set("works_on_engagements", e.target.checked)} />
         <p className="small muted" style={{ marginTop: -4 }}>
           You are then made Partner on every client you create. That weakens segregation of duties, so each such assignment is recorded in
           the audit trail and flagged in access reviews. Change it later under Administration → Firm settings.
@@ -120,7 +142,11 @@ export function SetupPage() {
           Create the firm
         </Button>
       </form>
-      <p className="small faint">Next: sign in and scan a QR code with your authenticator app. Multi-factor authentication is required for every account.</p>
+      <p className="small faint">
+        {mfa
+          ? "Next: sign in and scan a QR code with your authenticator app. Multi-factor authentication is required for every account."
+          : "Next: sign in with your e-mail and the password you choose here."}
+      </p>
     </AuthLayout>
   );
 }

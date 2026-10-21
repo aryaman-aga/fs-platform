@@ -15,6 +15,7 @@ import { AppShell } from "@/layout/AppShell";
 import { AdminPage } from "@/pages/admin/AdminPages";
 import { AcceptInvitePage, ChangePasswordPage, ForgotPasswordPage, LoginPage, MfaEnrollPage, MfaPage, ResetPasswordPage } from "@/pages/auth/AuthPages";
 import { SetupPage } from "@/pages/auth/SetupPage";
+import { SignupPage } from "@/pages/auth/SignupPage";
 import { ClientDetailPage, ClientsPage } from "@/pages/clients/ClientsPages";
 import { Dashboard } from "@/pages/Dashboard";
 import { Workspace } from "@/pages/engagement/Workspace";
@@ -61,6 +62,7 @@ export function AppRoutes() {
       <Routes>
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
         <Route path="/mfa" element={<MfaPage />} />
         <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />

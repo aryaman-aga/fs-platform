@@ -73,3 +73,17 @@ def test_diagnostics_hold_no_client_data(installed: OfflineSettings, tmp_path: P
     assert not any(n.endswith((".sqlite3", ".key", ".token")) or n.startswith("objects/") for n in names)
     assert "fsoffline" in info and info["runtime"] is None
     assert "***" in settings_txt and "FSWEB_SECRET_KEY=***" in settings_txt  # secrets redacted
+
+
+def test_menu_marks_the_authenticator_reset_while_the_authenticator_is_off(tmp_path: Path) -> None:
+    """Off is the desktop default: resetting an authenticator then helps nobody to sign in."""
+    s = OfflineSettings(data_dir=tmp_path)
+    menu = recovery.menu(s)
+    assert "2. Reset an administrator's authenticator (only when the authenticator is switched on)" in menu
+    assert "1. Reset an administrator's password" in menu  # still offered, unchanged
+    assert "asks only for the e-mail and password" in recovery.mfa_reset_done(s, EMAIL)
+    (tmp_path / "fsplatform.ini").write_text("[app]\nmfa_required = true\n", encoding="utf-8")
+    assert "2. Reset an administrator's authenticator (MFA)" in recovery.menu(s)
+    assert recovery.mfa_reset_done(s, EMAIL) == f"{EMAIL} enrols a new authenticator at the next sign-in."
+    (tmp_path / "fsplatform.ini").write_text("[app]\nmfa_required = sometimes\n", encoding="utf-8")
+    assert "(MFA)" in recovery.menu(s)  # unreadable: treated as on, not hidden

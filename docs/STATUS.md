@@ -46,13 +46,13 @@ within six months, T3 when scaling.
   recalculates every generated formula to the engine's values; performance on a 50-sheet,
   1.5-million-cell workbook: check ≈ 11 s (target < 60 s), fix + write + verify ≈ 39 s (target < 120 s).
 
-- **Test totals** (last full run): engine 806 (including the performance test); API, tooling, Windows render
-  service, offline edition and operations 4,150 (with PostgreSQL row-level security); UI 62 unit tests and 13
+- **Test totals** (last full run): engine 820 (including the performance test); API, tooling, Windows render
+  service, offline edition and operations 4,332 (with PostgreSQL row-level security); UI 62 unit tests and 13
   Playwright end-to-end tests against a real API, worker and UI; ruff, mypy `--strict` (engine), ESLint, tsc,
   Bandit, pip-audit and npm audit clean.
 
 ### Platform (`fsweb`, `fsui`, `ops`)
-- FastAPI platform with local accounts + mandatory TOTP, OIDC SSO (tested against a mocked IdP), session
+- FastAPI platform with local accounts + mandatory TOTP (firm server), OIDC SSO (tested against a mocked IdP), session
   security, RBAC matrix + ABAC policies, PostgreSQL FORCE row-level security (tested as the runtime role),
   step-up MFA, just-in-time elevation, break-glass, envelope encryption of identifiers, engagement state
   machine and FINAL-lock gates, dual unlock, immutable versions, check-out locks, transactional-outbox job
@@ -78,7 +78,12 @@ within six months, T3 when scaling.
   (transactional, backup first, newer databases refused), first-run setup authorised by a one-time token, invite and
   password-reset links shown on screen, forced change of temporary passwords, daily backups (14 kept, files mirrored
   incrementally, optional second folder), a Recovery tool (reset administrator password / MFA, allow a Windows
-  account, restore, diagnostics). Windows fixes found on the way: binary-safe `os.open`, `fsync` on Windows,
+  account, restore, diagnostics). **Desktop 1.0.1:** sign-in with e-mail and password (no authenticator) and
+  password confirmation of privileged actions (lockout and rate limits as at sign-in); *Create an account* on the
+  sign-in page, the new account seeing nothing until an administrator assigns a role (audited `user.signed_up`);
+  both switchable per PC in `fsplatform.ini` (`mfa_required = true`, `signup_enabled = false`; open sessions are asked
+  for a code as soon as the authenticator is on) and refused by the firm server; threat model T52; the CI smoke test
+  runs this flow on the installed copy. Windows fixes found on the way: binary-safe `os.open`, `fsync` on Windows,
   extended-length object paths and Windows-safe keys, registry-proof MIME types, Excel-absent fallback to
   LibreOffice. PyMuPDF (AGPL) replaced by pypdfium2 + pypdf so the bundle is permissively licensed.
   CI: tests on Windows, installer built on macOS and exercised end to end on a clean Windows runner.

@@ -6,8 +6,9 @@ import { api } from "@/api/client";
 import { useEngagements } from "@/api/hooks";
 import type { AuditEventOut, Page, ReviewNoteOut } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { isClientUser } from "@/auth/permissions";
+import { hasNoRole, isClientUser } from "@/auth/permissions";
 import { DataGrid } from "@/components/DataGrid";
+import { NoRoleYet } from "@/components/NoRoleYet";
 import { Card, Chip, EmptyState, EngagementStatusChip, ErrorNotice, PageHeader, Spinner, Stat } from "@/components/ui";
 import { formatDate, formatDateTime, titleCase } from "@/lib/format";
 
@@ -30,6 +31,19 @@ export function Dashboard() {
   });
 
   if (isClientUser(me)) return <Navigate to="/portal" replace />;
+  if (hasNoRole(me)) {
+    // e.g. a self-service account: nothing to list until an administrator gives it a role
+    return (
+      <div className="stack">
+        <PageHeader title={`Welcome, ${me?.user.name.split(" ")[0] ?? ""}`} />
+        <Card>
+          <EmptyState>
+            <NoRoleYet />
+          </EmptyState>
+        </Card>
+      </div>
+    );
+  }
 
   const myNotes = notesQueries
     .flatMap((q, i) => (q.data ?? []).map((n) => ({ n, eng: list[i] })))

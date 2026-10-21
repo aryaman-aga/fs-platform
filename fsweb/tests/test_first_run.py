@@ -60,7 +60,9 @@ def fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fresh]:
 
 def test_options_on_a_fresh_installation_and_after_setup(fresh: Fresh) -> None:
     c = fresh.client()
-    assert c.get("/api/v1/auth/options").json() == {"setup_required": True, "sso": False, "edition": "server", "self_service_reset": False}
+    opts = c.get("/api/v1/auth/options").json()
+    assert opts == {"setup_required": True, "sso": False, "edition": "server", "self_service_reset": False,
+                    "mfa_required": True, "signup": False}
     assert c.post("/api/v1/setup", json=body()).status_code == 201
     assert c.get("/api/v1/auth/options").json()["setup_required"] is False
 
@@ -83,7 +85,9 @@ def test_options_desktop_edition_never_offers_email_reset(tmp_path: Path, monkey
     monkeypatch.setenv("FSWEB_SMTP_HOST", "smtp.corvus.test")  # even if someone sets it: no e-mail offline
     f = Fresh(tmp_path, env="offline", kms_master_key=base64.b64encode(os.urandom(32)).decode())
     opts = f.client(base_url="http://127.0.0.1:8700").get("/api/v1/auth/options").json()
-    assert opts == {"setup_required": True, "sso": False, "edition": "desktop", "self_service_reset": False}
+    # Settings' defaults; the launcher switches off the authenticator, on sign-up (test_password_sign_in.py)
+    assert opts == {"setup_required": True, "sso": False, "edition": "desktop", "self_service_reset": False,
+                    "mfa_required": True, "signup": False}
 
 
 def test_setup_is_not_offered_on_the_firm_server(tmp_path: Path) -> None:

@@ -25,7 +25,7 @@ from fsweb.authz.deps import (
 )
 from fsweb.authz.permissions import PERMISSION_CODES
 from fsweb.db import RLSContext, set_rls, utcnow
-from fsweb.errors import ApiError, bad_request, conflict, not_found, too_many, unauthorized
+from fsweb.errors import ApiError, bad_request, conflict, forbidden, not_found, too_many, unauthorized
 from fsweb.models import (
     Client,
     Incident,
@@ -44,6 +44,7 @@ from fsweb.security.crypto import hash_token, new_token
 from fsweb.security.oidc import OIDCClient, OIDCError, pkce_pair
 from fsweb.services import accounts
 from fsweb.services.common import notify, users_with_role
+from fsweb.services.seed import make_user
 
 router = APIRouter(tags=["auth"])
 seclog = logging.getLogger("fsweb.security")
@@ -58,6 +59,8 @@ def auth_options(request: Request, db: Session = Depends(get_db)) -> schemas.Aut
         sso=bool(s.oidc_issuer and s.oidc_client_id),
         edition="desktop" if accounts.edition(s) == "desktop" else "server",
         self_service_reset=accounts.email_delivery(s),
+        mfa_required=s.mfa_required,
+        signup=accounts.signup_allowed(s),
     )
 
 
@@ -109,14 +112,24 @@ def login(body: schemas.LoginIn, request: Request, response: Response, db: Sessi
     user.failed_logins = 0
     if user.password_hash and passwords.needs_rehash(user.password_hash):
         user.password_hash = passwords.hash_password(body.password)
+    mfa = st.settings.mfa_required
+    # Without an authenticator too, the session records that no second factor was checked (mfa_verified is
+    # False): switching the authenticator on asks every open session for one (deps._session_from_request).
     sess, token, csrf = sessions.create_session(db, st.settings, user, method="breakglass" if user.is_break_glass else "password",
                                                 mfa_verified=False, ip=ip, user_agent=request.headers.get("user-agent"))
     if user.is_break_glass:
         _breakglass_alert(db, user, request)
-    audit.append(db, _actor_for(user, request), "auth.password_ok", object_type="session", object_id=sess.id)
+    actor = _actor_for(user, request)
+    if mfa:
+        audit.append(db, actor, "auth.password_ok", object_type="session", object_id=sess.id)
+    else:  # no authenticator on this installation: the password signs in and counts as a fresh confirmation
+        user.last_login_at = utcnow()
+        sess.stepup_at = utcnow()
+        audit.append(db, actor, "auth.login", object_type="session", object_id=sess.id,
+                     details={"mfa": "off"})
     db.commit()
     sessions.set_cookies(response, st.settings, token, csrf, sess)
-    status = "mfa_required" if user.totp_secret_enc else "mfa_enrollment_required"
+    status = "ok" if not mfa else "mfa_required" if user.totp_secret_enc else "mfa_enrollment_required"
     return schemas.LoginOut(status=status, csrf_token=csrf, expires_at=sess.expires_at)
 
 
@@ -137,7 +150,11 @@ def _verify_code(db: Session, request: Request, user: User, code: str, *, allow_
     return None
 
 
-def _mfa_failure(db: Session, request: Request, user: User, action: str) -> ApiError:
+def _mfa_failure(db: Session, request: Request, user: User, action: str, *,
+                 message: str = "the code is not valid", code: str = "mfa_invalid",
+                 details: dict[str, object] | None = None) -> ApiError:
+    """A wrong code (or, with no authenticator, a wrong password at step-up): counts toward the lockout, which
+    also signs the account out everywhere."""
     st = get_state(request)
     user.failed_logins += 1
     if user.failed_logins >= st.settings.lockout_threshold:
@@ -145,9 +162,10 @@ def _mfa_failure(db: Session, request: Request, user: User, action: str) -> ApiE
         user.failed_logins = 0
         sessions.revoke_all(db, user.id)
         audit.append(db, _actor_for(user, request), "auth.locked", object_type="user", object_id=user.id, outcome="denied")
-    audit.append(db, _actor_for(user, request), action, object_type="user", object_id=user.id, outcome="denied")
+    audit.append(db, _actor_for(user, request), action, object_type="user", object_id=user.id,
+                 outcome="denied", details=details)
     db.commit()
-    return unauthorized("the code is not valid", "mfa_invalid")
+    return unauthorized(message, code)
 
 
 @router.post("/auth/mfa/verify", response_model=schemas.AuthOkOut, responses={401: {"model": schemas.ErrorBody}})
@@ -226,17 +244,41 @@ def mfa_enroll_confirm(body: schemas.MfaCodeIn, request: Request, response: Resp
     return schemas.RecoveryCodesOut(recovery_codes=codes, csrf_token=csrf)
 
 
-@router.post("/auth/step-up", response_model=schemas.OkOut)
-def step_up(body: schemas.MfaCodeIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.OkOut:
-    """Re-verify TOTP for privileged actions (valid for a few minutes, E-SEC-03)."""
+@router.post("/auth/step-up", response_model=schemas.OkOut,
+             responses={400: {"model": schemas.ErrorBody}, 401: {"model": schemas.ErrorBody}})
+def step_up(body: schemas.StepUpIn, request: Request, p: Principal = Depends(require_principal),
+            db: Session = Depends(get_db)) -> schemas.OkOut:
+    """Confirm privileged actions for a few minutes (E-SEC-03): the authenticator code, or the password where this
+    installation requires no authenticator."""
+    st = get_state(request)
     user = db.get(User, p.user_id)
     sess = db.get(UserSession, p.session_id)
     assert user is not None
     assert sess is not None
-    if _verify_code(db, request, user, body.code, allow_recovery=False) is None:
-        raise _mfa_failure(db, request, user, "auth.stepup_failed")
+    mfa = st.settings.mfa_required
+    if mfa:
+        if not body.code:
+            raise bad_request("code_required", "enter the code from your authenticator app")
+        if _verify_code(db, request, user, body.code, allow_recovery=False) is None:
+            raise _mfa_failure(db, request, user, "auth.stepup_failed")
+    else:  # the password, as at sign-in: rate-limited (argon2 is costly), refused while locked, failures lock
+        if not st.limiter.hit(f"stepup:{p.user_id}", 10, 60):
+            raise too_many()
+        if not body.password:
+            raise bad_request("password_required", "enter your password to confirm")
+        if user.locked_until is not None and user.locked_until > utcnow():
+            audit.append(db, p.actor(), "auth.stepup_failed", object_type="user", object_id=user.id,
+                         outcome="denied", details={"reason": "locked"})
+            db.commit()
+            raise ApiError(401, "account_locked", "account temporarily locked after repeated failures; try "
+                           "again later", headers={"Retry-After": "900"})
+        if not passwords.verify_password(user.password_hash, body.password):
+            raise _mfa_failure(db, request, user, "auth.stepup_failed", message="the password is not correct",
+                               code="invalid_password", details={"reason": "bad_password"})
+        user.failed_logins = 0
     sess.stepup_at = utcnow()
-    audit.append(db, p.actor(), "auth.step_up", object_type="session", object_id=sess.id)
+    audit.append(db, p.actor(), "auth.step_up", object_type="session", object_id=sess.id,
+                 details=None if mfa else {"mfa": "off"})
     db.commit()
     return schemas.OkOut(message="step-up verified")
 
@@ -308,6 +350,7 @@ def me(request: Request, p: Principal = Depends(require_pre_mfa), db: Session = 
         permissions=perms,
         ai_policy_version=ai_pol.version if ai_pol else None,
         ai_policy_accepted=bool(ai_pol and user.ai_policy_version == ai_pol.version),
+        mfa_required=st.settings.mfa_required,
         must_change_password=bool(user.must_change_password),
     )
 
@@ -356,7 +399,58 @@ def accept_invite(body: schemas.InviteAcceptIn, request: Request, db: Session = 
     inv.used_at = utcnow()
     audit.append(db, _actor_for(user, request), "user.invite_accepted", object_type="user", object_id=user.id)
     db.commit()
-    return schemas.OkOut(message="password set; sign in and enrol your authenticator")
+    then = ", then set up your authenticator app" if st.settings.mfa_required else " with your e-mail and password"
+    return schemas.OkOut(message=f"Your password is set. Sign in{then}.")
+
+
+SIGNUP_RATE_PER_MINUTE = 5
+
+
+@router.post("/auth/signup", response_model=schemas.LoginOut, status_code=201,
+             responses={400: {"model": schemas.ErrorBody}, 403: {"model": schemas.ErrorBody},
+                        409: {"model": schemas.ErrorBody}, 429: {"model": schemas.ErrorBody}})
+def signup(body: schemas.SignupIn, request: Request, response: Response,
+           db: Session = Depends(get_db)) -> schemas.LoginOut:
+    """"Create an account" (desktop edition). The account is signed in at once but has no role, so it sees no client
+    until an administrator assigns one (Admin → Assignments); administrators find it on Admin → Users."""
+    st = get_state(request)
+    if not accounts.signup_allowed(st.settings):
+        raise forbidden("accounts are created by an administrator on this installation", "signup_disabled")
+    ip = client_ip(request) or "unknown"
+    if not st.limiter.hit(f"signup:ip:{ip}", SIGNUP_RATE_PER_MINUTE, 60):
+        raise too_many("too many attempts; wait a minute")
+    tenants = db.execute(select(Tenant).limit(2)).scalars().all()  # readable in get_db's 'auth' scope (RLS)
+    if not tenants:
+        raise conflict("setup_required", "FS-Platform is not set up yet; the first start sets up the firm "
+                       "and its administrator")
+    if len(tenants) > 1:
+        raise forbidden("self-service accounts need a single firm on this installation", "signup_disabled")
+    tenant = tenants[0]
+    email, name = str(body.email).strip().lower(), body.name.strip()
+    set_rls(db, RLSContext(tenant.id, None, "auth"))
+    if db.execute(select(User.id).where(User.email == email)).first() is not None:
+        raise conflict("email_taken", "an account with this e-mail already exists: sign in, or ask an "
+                       "administrator to reset its password")
+    try:
+        passwords.check_policy(body.password, email=email, name=name)
+    except passwords.PasswordPolicyError as exc:
+        raise bad_request("password_policy", str(exc)) from exc
+    user = make_user(db, st.cipher, tenant.id, email, name, password=body.password)
+    mfa = st.settings.mfa_required
+    sess, token, csrf = sessions.create_session(db, st.settings, user, method="password", mfa_verified=False,
+                                                ip=ip, user_agent=request.headers.get("user-agent"))
+    actor = _actor_for(user, request)
+    audit.append(db, actor, "user.signed_up", object_type="user", object_id=user.id,
+                 details={"via": "sign-up page", "roles": 0})
+    if not mfa:
+        user.last_login_at = utcnow()
+        sess.stepup_at = utcnow()
+        audit.append(db, actor, "auth.login", object_type="session", object_id=sess.id,
+                     details={"mfa": "off"})
+    db.commit()
+    sessions.set_cookies(response, st.settings, token, csrf, sess)
+    return schemas.LoginOut(status="mfa_enrollment_required" if mfa else "ok", csrf_token=csrf,
+                            expires_at=sess.expires_at)
 
 
 @router.post("/auth/password/forgot", response_model=schemas.OkOut)

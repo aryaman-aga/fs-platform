@@ -3,7 +3,8 @@
 Allowed once, while no firm exists, only in the desktop / development editions, only from this PC (loopback) and
 rate-limited. When ``FSWEB_SETUP_TOKEN_FILE`` is set (the desktop launcher always sets it) the request must also
 carry the one-time token the launcher wrote to that file and opened as ``/setup#token=…``. The administrator
-chooses their own password; no authenticator is pre-enrolled, so the first sign-in enrols one with a QR code.
+chooses their own password; no authenticator is pre-enrolled, so where one is required (always on the firm
+server; on the desktop edition once an administrator switches it on) the first sign-in enrols it by QR code.
 """
 
 from __future__ import annotations
@@ -127,7 +128,8 @@ def first_run_setup(body: schemas.SetupIn, request: Request, db: Session = Depen
     actor = audit.Actor(res.tenant.id, None, "setup", peer, request.headers.get("user-agent"), getattr(request.state, "correlation_id", None))
     audit.append(db, actor, "tenant.setup_completed", object_type="tenant", object_id=res.tenant.id,
                  details={"admin_user_id": res.admin.id, "edition": accounts.edition(st.settings), WORKS_ON_ENGAGEMENTS: body.works_on_engagements,
-                          "setup_token": token_file is not None, "mfa": "enrol at first sign-in"})
+                          "setup_token": token_file is not None,
+                          "mfa": "enrol at first sign-in" if st.settings.mfa_required else "off"})
     audit.append(db, actor, "assignment.created", object_type="assignment", object_id=res.assignment.id,
                  details={"user_id": res.admin.id, "role": "firm_admin", "via": "setup"})
     db.commit()
@@ -136,4 +138,8 @@ def first_run_setup(body: schemas.SetupIn, request: Request, db: Session = Depen
             token_file.unlink(missing_ok=True)  # one-time: the link cannot be replayed
         except OSError as exc:  # pragma: no cover - the firm exists now, so setup is refused anyway
             log.warning("could not delete the setup token file", extra={"error": str(exc)})
-    return schemas.SetupOut(tenant_id=res.tenant.id, admin_email=res.admin.email)
+    if st.settings.mfa_required:
+        message = "FS-Platform is set up. Sign in, then scan the QR code with your authenticator app."
+    else:
+        message = "FS-Platform is set up. Sign in with your e-mail and password."
+    return schemas.SetupOut(tenant_id=res.tenant.id, admin_email=res.admin.email, message=message)

@@ -67,6 +67,11 @@ def setup_allowed(settings: Settings) -> bool:
     return settings.env in SETUP_ENVS
 
 
+def signup_allowed(settings: Settings) -> bool:
+    """Self-service accounts ("Create an account"): not on the firm server (prod also refuses the setting)."""
+    return settings.signup_enabled and settings.env != "prod"
+
+
 def tenant_exists(db: Session) -> bool:
     return db.execute(select(Tenant.id).limit(1)).first() is not None
 

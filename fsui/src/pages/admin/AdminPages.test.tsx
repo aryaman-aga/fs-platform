@@ -136,6 +136,23 @@ describe("Administration on the desktop edition", () => {
     expect(within(grid).getAllByText(/made Partner automatically/)).toHaveLength(1);
   });
 
+  it("with an authenticator, Users shows MFA and the reset link keeps the authenticator enrolled", async () => {
+    mockApi({
+      "/api/v1/auth/me": { ...ADMIN_ME, session: { ...ADMIN_ME.session, stepup_valid_until: null } },
+      "/api/v1/auth/options": DESKTOP,
+      "/api/v1/admin/users": [MEERA],
+      "/api/v1/admin/roles": [],
+      "/api/v1/clients": [],
+    });
+    renderAdmin("users");
+    const row = (await screen.findByText("meera@corvus.test")).closest("tr") as HTMLElement;
+    expect(screen.getByRole("columnheader", { name: "MFA" })).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "Reset password" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/their authenticator stays enrolled/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Authenticator code")).toBeInTheDocument();
+  });
+
   it("Firm settings switch the administrator's engagement work on, with step-up and a reason", async () => {
     const { calls } = mockApi({
       "/api/v1/auth/me": ADMIN_ME,
@@ -153,5 +170,90 @@ describe("Administration on the desktop edition", () => {
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/admin/tenant-settings") && c.init?.method === "PUT")).toBe(true));
     const put = calls.find((c) => c.init?.method === "PUT");
     expect(JSON.parse(String(put?.init?.body))).toEqual({ works_on_engagements: true });
+  });
+});
+
+describe("Administration without an authenticator, with self-service accounts", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ADMIN = { ...ADMIN_ME, mfa_required: false, permissions: { "*": { ...ADMIN_ME.permissions["*"], "engagement.assign": "allow" } } };
+  const OPTIONS = { ...DESKTOP, mfa_required: false, signup: true };
+  // created their own account yesterday: no role yet
+  const RAVI = { ...MEERA, id: "u-ravi", email: "ravi@corvus.test", name: "Ravi Iyer", mfa_type: "none", mfa_enrolled_at: null, created_at: "2026-10-21T00:00:00Z" };
+  const MEERA_STAFF = { id: "a2", user_id: "u-meera", client_id: "c1", client_name: "Synthetic Demo", role_code: "staff", role_name: "Staff / Article", created_at: "2026-10-01T00:00:00Z" };
+
+  it("Users marks people with no role yet and leads to Assignments; nothing about MFA", async () => {
+    mockApi({
+      "/api/v1/auth/me": ADMIN,
+      "/api/v1/auth/options": OPTIONS,
+      "/api/v1/admin/users": [MEERA, RAVI],
+      "/api/v1/admin/roles": [],
+      "/api/v1/clients": [],
+      "/api/v1/admin/assignments": [MEERA_STAFF],
+    });
+    renderAdmin("users");
+    const ravi = (await screen.findByText("ravi@corvus.test")).closest("tr") as HTMLElement;
+    expect(await within(ravi).findByText("No role yet")).toBeInTheDocument();
+    expect(within(ravi).getByRole("link", { name: "Give a role" })).toHaveAttribute("href", "/admin/assignments?user=u-ravi");
+    const meera = screen.getByText("meera@corvus.test").closest("tr") as HTMLElement;
+    expect(within(meera).queryByText("No role yet")).toBeNull();
+    expect(within(meera).queryByRole("link", { name: "Give a role" })).toBeNull();
+    const hint = screen.getByTestId("no-role-hint");
+    expect(hint).toHaveTextContent("Ravi Iyer has no role yet, so they cannot see any client.");
+    expect(within(hint).getByRole("link", { name: "Give them a role under Assignments" })).toHaveAttribute("href", "/admin/assignments?user=u-ravi");
+
+    expect(screen.queryByRole("columnheader", { name: "MFA" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset MFA" })).toBeNull();
+    fireEvent.click(within(ravi).getByRole("button", { name: "Reset password" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).not.toHaveTextContent(/authenticator|MFA/);
+  });
+
+  it("Give a role opens Assignments with the person already chosen; a per-client role needs its client", async () => {
+    const { calls } = mockApi({
+      "/api/v1/auth/me": ADMIN,
+      "/api/v1/auth/options": OPTIONS,
+      "/api/v1/admin/users": [MEERA, RAVI],
+      "/api/v1/admin/roles": [
+        { id: "r-staff", code: "staff", name: "Staff / Article", scope: "client", is_system: true, is_client_role: false, download_allowed: true, description: "" },
+        { id: "r-fa", code: "firm_admin", name: "Firm Admin", scope: "tenant", is_system: true, is_client_role: false, download_allowed: false, description: "" },
+      ],
+      "/api/v1/clients": [{ id: "c1", name: "Synthetic Demo", classification: "confidential", status: "active" }],
+      "/api/v1/admin/assignments": (init?: RequestInit) => (init?.method === "POST" ? { ...MEERA_STAFF, id: "a3", user_id: "u-ravi" } : [MEERA_STAFF]),
+    });
+    renderAdmin("assignments?user=u-ravi");
+    await screen.findByRole("option", { name: "ravi@corvus.test" });
+    expect(screen.getByLabelText("User")).toHaveValue("u-ravi");
+    await screen.findByRole("option", { name: "Staff / Article" });
+    const assign = screen.getByRole("button", { name: "Assign" });
+    expect(assign).toBeDisabled(); // Staff is per client: choose the client first
+    const card = screen.getByRole("heading", { name: "Assign a role" }).closest("section") as HTMLElement;
+    fireEvent.change(within(card).getByLabelText("Client"), { target: { value: "c1" } });
+    expect(assign).toBeEnabled();
+    fireEvent.click(assign);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Reason (recorded in the audit trail)"), { target: { value: "joined the audit team" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/admin/assignments") && c.init?.method === "POST")).toBe(true));
+    const post = calls.find((c) => c.url.endsWith("/admin/assignments") && c.init?.method === "POST");
+    expect(JSON.parse(String(post?.init?.body))).toEqual({ user_id: "u-ravi", role_code: "staff", client_id: "c1" });
+    expect(header(post?.init, "X-Action-Reason")).toBe("joined the audit team");
+  });
+
+  it("the role list offers only the roles that fit the chosen person", async () => {
+    mockApi({
+      "/api/v1/auth/me": ADMIN,
+      "/api/v1/auth/options": OPTIONS,
+      "/api/v1/admin/users": [MEERA, RAVI],
+      "/api/v1/admin/roles": [
+        { id: "r-staff", code: "staff", name: "Staff / Article", scope: "client", is_system: true, is_client_role: false, download_allowed: true, description: "" },
+        { id: "r-cv", code: "client_viewer", name: "Client – Viewer", scope: "client", is_system: true, is_client_role: true, download_allowed: false, description: "" },
+      ],
+      "/api/v1/clients": [{ id: "c1", name: "Synthetic Demo", classification: "confidential", status: "active" }],
+      "/api/v1/admin/assignments": [MEERA_STAFF],
+    });
+    renderAdmin("assignments?user=u-ravi");
+    await screen.findByRole("option", { name: "Staff / Article" });
+    expect(screen.queryByRole("option", { name: "Client – Viewer" })).toBeNull(); // Ravi is a firm user
   });
 });

@@ -4,16 +4,19 @@
 
 Waits (up to ``--wait`` seconds) for the app to start: its address is read from ``<data-dir>/runtime.json``.
 
-First run, through the HTTP API exactly as the browser drives it:
-  setup with the launcher's one-time token → the administrator signs in and enrols an authenticator → invites a
-  colleague as Manager of a new client (the link is returned on screen) → the colleague accepts and enrols → client,
-  entity and engagement → upload a synthetic workbook with known errors → checks → the colleague proposes the fix plan,
-  the administrator (Partner) approves it → apply and verify → a LibreOffice draft PDF that reconciles with no misses →
-  a watermarked download → a backup.
-``--existing`` (after an upgrade or restore): the firm and the engagement are still there and both accounts sign in.
+First run, through the HTTP API exactly as the browser drives it, with the desktop defaults (e-mail and
+password, no authenticator; "Create an account" on the sign-in page):
+  setup with the launcher's one-time token → the administrator signs in → client, entity and engagement → a
+  colleague creates an account, which sees no client → the administrator confirms with the password and makes
+  the colleague Manager of the client → the colleague sees it → upload a synthetic workbook with known errors
+  → checks → the colleague proposes the fix plan and cannot approve it, the administrator (Partner) approves
+  → apply and verify → a LibreOffice draft PDF that reconciles with no misses → a watermarked download → a
+  backup.
+``--existing`` (after a restart, an upgrade or a restore): the firm and the engagement are still there and
+both accounts sign in with their passwords.
 
-Uses only what the installed bundle contains (httpx, pyotp, fscore's synthetic workbook generator). State between the
-two modes is kept in ``<data-dir>/smoke-test.json`` (test credentials for a throw-away CI machine only).
+Uses only what the installed bundle contains (httpx and fscore's synthetic workbook generator). State between
+the two modes is kept in ``<data-dir>/smoke-test.json`` (test credentials for a throw-away CI machine only).
 """
 
 from __future__ import annotations
@@ -29,10 +32,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import pyotp
 
 TIMEOUT = 240.0
 REASON = {"X-Action-Reason": "CI smoke test of the installed desktop edition"}
+# the review errors the demo workbook carries (fsweb.manage.DEMO_INJECTIONS)
+INJECTIONS = ["subtotal_not_cast", "plug_total_minus", "din_mismatch", "gc_stale_figure",
+              "rpt_omitted_balance", "hidden_row_in_total"]
 
 
 class Step:
@@ -48,13 +53,12 @@ step = Step()
 
 
 class User:
-    """One signed-in browser: cookies, CSRF header and the authenticator."""
+    """One browser: cookies and the CSRF header of its session."""
 
-    def __init__(self, base: str, email: str, password: str, secret: str | None = None) -> None:
+    def __init__(self, base: str, email: str, password: str) -> None:
         self.c = httpx.Client(base_url=base, timeout=60.0, follow_redirects=False)
-        self.email, self.password, self.secret = email, password, secret
+        self.email, self.password = email, password
         self.csrf = ""
-        self._last_step = -1
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         return {"X-CSRF-Token": self.csrf, **(extra or {})}
@@ -65,40 +69,36 @@ class User:
     def post(self, path: str, extra: dict[str, str] | None = None, **kw: Any) -> httpx.Response:
         return self.c.post(path, headers=self._headers(extra), **kw)
 
-    def code(self) -> str:
-        """A TOTP code from a time step not used before (the server refuses replays)."""
-        assert self.secret
-        totp = pyotp.TOTP(self.secret)
-        while int(time.time() // 30) == self._last_step:
-            time.sleep(1)
-        self._last_step = int(time.time() // 30)
-        return totp.now()
-
-    def sign_in(self) -> list[str]:
-        r = self.c.post("/api/v1/auth/login", json={"email": self.email, "password": self.password})
-        expect(r, 200, "sign in")
+    def _signed_in(self, r: httpx.Response, status: int, what: str) -> None:
+        expect(r, status, what)
+        if r.json()["status"] != "ok":  # the desktop default: no authenticator
+            raise SystemExit(f"FAILED: {what}: asks for more than the password ({r.json()['status']})")
         self.csrf = r.json()["csrf_token"]
-        if r.json()["status"] == "mfa_enrollment_required":
-            enrol = self.post("/api/v1/auth/mfa/enroll")
-            expect(enrol, 200, "start authenticator enrolment")
-            self.secret = enrol.json()["secret"]
-            done = self.post("/api/v1/auth/mfa/enroll/confirm", json={"code": self.code()})
-            expect(done, 200, "confirm authenticator")
-            self.csrf = done.json()["csrf_token"]
-            return list(done.json()["recovery_codes"])
-        v = self.post("/api/v1/auth/mfa/verify", json={"code": self.code()})
-        expect(v, 200, "authenticator code")
-        self.csrf = v.json().get("csrf_token", self.csrf) or self.c.cookies.get("fs_csrf", self.csrf)
-        return []
 
-    def step_up(self) -> None:
-        expect(self.post("/api/v1/auth/step-up", json={"code": self.code()}), 200, "step-up")
+    def sign_in(self) -> None:
+        r = self.c.post("/api/v1/auth/login", json={"email": self.email, "password": self.password})
+        self._signed_in(r, 200, f"{self.email} signs in")
+
+    def sign_up(self, name: str) -> None:
+        body = {"name": name, "email": self.email, "password": self.password}
+        self._signed_in(self.c.post("/api/v1/auth/signup", json=body), 201, "create an account")
+
+    def step_up(self, password: str | None = None) -> httpx.Response:
+        """Confirm a privileged action with the password (no authenticator on this installation)."""
+        return self.post("/api/v1/auth/step-up", json={"password": password or self.password})
 
 
 def expect(r: httpx.Response, status: int, what: str) -> httpx.Response:
     if r.status_code != status:
         raise SystemExit(f"FAILED: {what}: HTTP {r.status_code} {r.text[:400]}")
     return r
+
+
+def error_code(r: httpx.Response) -> str:
+    try:
+        return str(r.json()["error"]["code"])
+    except (ValueError, KeyError, TypeError):
+        return ""
 
 
 def wait_run(u: User, run_id: str, what: str) -> dict[str, Any]:
@@ -114,11 +114,13 @@ def wait_run(u: User, run_id: str, what: str) -> dict[str, Any]:
 
 
 def first_run(base: str, data_dir: Path, state_file: Path) -> None:
-    step("first-run options")
+    step("first-run options: setup, no authenticator, \"Create an account\"")
     opts = expect(httpx.get(base + "/api/v1/auth/options"), 200, "options").json()
     assert opts["setup_required"], opts
     assert opts["edition"] == "desktop", opts
     assert not opts["sso"], opts
+    assert opts["mfa_required"] is False, opts
+    assert opts["signup"] is True, opts
     token = (data_dir / "secrets" / "setup.token").read_text(encoding="ascii").strip()
     admin_email, colleague_email = "admin@corvus-advisors.example", "manager@corvus-advisors.example"
     admin_pw, colleague_pw = "Ledger-Smoke-Test-2026!a", "Ledger-Smoke-Test-2026!b"
@@ -128,12 +130,16 @@ def first_run(base: str, data_dir: Path, state_file: Path) -> None:
             "works_on_engagements": True}
     expect(httpx.post(base + "/api/v1/setup", json=body), 403, "setup without token")
     step("setup with the token")
-    expect(httpx.post(base + "/api/v1/setup", json={**body, "setup_token": token}), 201, "setup")
+    r = expect(httpx.post(base + "/api/v1/setup", json={**body, "setup_token": token}), 201, "setup")
+    assert "e-mail and password" in r.json()["message"], r.json()
     expect(httpx.post(base + "/api/v1/setup", json={**body, "setup_token": token}), 409, "second setup")
 
-    step("administrator signs in and enrols an authenticator")
+    step("the administrator signs in with e-mail and password")
     admin = User(base, admin_email, admin_pw)
-    assert len(admin.sign_in()) >= 8, "recovery codes"
+    admin.sign_in()
+    me = expect(admin.get("/api/v1/auth/me"), 200, "me").json()
+    assert me["mfa_required"] is False, me
+    assert me["permissions"]["*"]["users.manage"] == "allow", me
 
     step("client, entity and engagement (the administrator becomes Partner on the client)")
     client = expect(admin.post("/api/v1/clients", json={"name": "Corvus Data Services (CI)"}), 201, "client").json()
@@ -142,25 +148,39 @@ def first_run(base: str, data_dir: Path, state_file: Path) -> None:
     eng = expect(admin.post("/api/v1/engagements", json={"entity_id": entity["id"], "name": "FY 2025-26 (CI)", "type": "annual",
                                                          "period_end": "2026-03-31"}), 201, "engagement").json()
 
-    step("invite a colleague as Manager of the client; the link is shown on screen")
-    admin.step_up()
-    inv = expect(admin.post("/api/v1/admin/users/invite", extra=REASON, json={"email": colleague_email, "name": "Manoj Manager",
-                                                                              "role_code": "manager", "client_id": client["id"]}),
-                 201, "invite").json()
-    link = inv.get("invite_link")
-    assert link, f"no invite link on screen: {inv}"
-    assert "token=" in link, link
-    expect(httpx.post(base + "/api/v1/auth/invite/accept", json={"token": link.split("token=", 1)[1], "password": colleague_pw}), 200,
-           "accept invite")
+    step("a colleague creates an account on the sign-in page; it sees no client yet")
     colleague = User(base, colleague_email, colleague_pw)
-    colleague.sign_in()
+    colleague.sign_up("Manoj Manager")
+    assert expect(colleague.get("/api/v1/clients"), 200, "clients of a new account").json() == []
+    expect(colleague.get(f"/api/v1/engagements/{eng['id']}"), 404, "engagement before a role")
+    me = expect(colleague.get("/api/v1/auth/me"), 200, "me").json()
+    grant = {"user_id": me["user"]["id"], "role_code": "manager", "client_id": client["id"]}
+    r = colleague.post("/api/v1/admin/assignments", extra=REASON, json=grant)
+    if r.status_code != 403:
+        raise SystemExit(f"FAILED: a new account gave itself a role: HTTP {r.status_code} {r.text[:200]}")
+
+    step("the administrator confirms with the password and makes the colleague Manager of the client")
+    r = admin.step_up("Not-the-administrator-password-1")
+    if r.status_code != 401 or error_code(r) != "invalid_password":
+        raise SystemExit(f"FAILED: a wrong password confirmed: HTTP {r.status_code} {r.text[:200]}")
+    expect(admin.step_up(), 200, "step-up with the password")
+    users = {u["email"]: u for u in expect(admin.get("/api/v1/admin/users"), 200, "users").json()}
+    assert users[colleague_email]["id"] == grant["user_id"], users.get(colleague_email)
+    expect(admin.post("/api/v1/admin/assignments", extra=REASON, json=grant), 201, "assign Manager")
+    signed_up = expect(admin.get("/api/v1/audit", params={"action": "user.signed_up"}), 200, "audit").json()
+    assert signed_up["total"] == 1, signed_up
+    assert signed_up["items"][0]["user_id"] == grant["user_id"], signed_up
+
+    step("the colleague now sees the client and the engagement")
+    seen = expect(colleague.get("/api/v1/clients"), 200, "clients").json()
+    assert [c["id"] for c in seen] == [client["id"]], seen
+    expect(colleague.get(f"/api/v1/engagements/{eng['id']}"), 200, "engagement with a role")
 
     step("upload a synthetic workbook with known review errors")
     from fscore.synthetic.generator import make_workbook
-    from fsweb.manage import DEMO_INJECTIONS
 
     with tempfile.TemporaryDirectory() as td:
-        made = make_workbook(Path(td) / "Corvus FY26.xlsx", seed=7, inject=list(DEMO_INJECTIONS))
+        made = make_workbook(Path(td) / "Corvus FY26.xlsx", seed=7, inject=list(INJECTIONS))
         data = Path(made.path).read_bytes()
     up = admin.post(f"/api/v1/engagements/{eng['id']}/files", data={"kind": "workbook"},
                     files={"file": ("Corvus FY26.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
@@ -214,8 +234,8 @@ def first_run(base: str, data_dir: Path, state_file: Path) -> None:
     if proc.returncode != 0:
         raise SystemExit("FAILED: backup")
 
-    state_file.write_text(json.dumps({"engagement_id": eng["id"], "admin": [admin_email, admin_pw, admin.secret],
-                                      "colleague": [colleague_email, colleague_pw, colleague.secret]}), encoding="utf-8")
+    state_file.write_text(json.dumps({"engagement_id": eng["id"], "admin": [admin_email, admin_pw],
+                                      "colleague": [colleague_email, colleague_pw]}), encoding="utf-8")
 
 
 def existing(base: str, state_file: Path) -> None:
@@ -224,11 +244,11 @@ def existing(base: str, state_file: Path) -> None:
     opts = expect(httpx.get(base + "/api/v1/auth/options"), 200, "options").json()
     assert not opts["setup_required"], opts
     for who in ("admin", "colleague"):
-        step(f"{who} signs in with the same authenticator")
-        u = User(base, *state[who])
-        u._last_step = int(time.time() // 30)  # the previous run may have used this time step: codes are single-use
+        step(f"{who} signs in with the same password")
+        email, password = state[who][:2]
+        u = User(base, email, password)
         u.sign_in()
-        eng = expect(u.get(f"/api/v1/engagements/{state['engagement_id']}"), 200, "engagement after upgrade").json()
+        eng = expect(u.get(f"/api/v1/engagements/{state['engagement_id']}"), 200, "engagement again").json()
         assert eng["status"] in ("FIXED_VERIFIED", "REVIEW"), eng
 
 
@@ -253,7 +273,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--url", help="default: the address in <data-dir>/runtime.json (the app picks the next port if 8746 is taken)")
     ap.add_argument("--data-dir", required=True)
-    ap.add_argument("--existing", action="store_true", help="after an upgrade: the data is still there")
+    ap.add_argument("--existing", action="store_true",
+                    help="after a restart or an upgrade: the data is still there")
     ap.add_argument("--wait", type=float, default=180.0, help="seconds to wait for the app to start (default 180)")
     a = ap.parse_args()
     data_dir = Path(a.data_dir)

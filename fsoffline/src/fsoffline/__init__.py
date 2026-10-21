@@ -7,4 +7,4 @@ server exclusively as signed, encrypted ``.fspkg`` engagement packages
 (07 §4, E-DATA-05) — never by synchronising databases.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

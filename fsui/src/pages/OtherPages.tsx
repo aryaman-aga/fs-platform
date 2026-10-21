@@ -1,12 +1,13 @@
 /** Firm-wide audit search, rule registry, profile, help, release notes, not found. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, apiBlob, saveFile } from "@/api/client";
 import type { AuditEventOut, Page, RuleOut, SessionInfo } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { roleCodes } from "@/auth/permissions";
+import { hasNoRole, mfaRequired, roleCodes } from "@/auth/permissions";
 import { DataGrid } from "@/components/DataGrid";
 import { useToast } from "@/components/Toast";
 import { Button, Card, Chip, ErrorNotice, KeyValue, Notice, PageHeader, Spinner, TextInput } from "@/components/ui";
@@ -142,6 +143,10 @@ export function ProfilePage() {
       await signOut();
     }
   };
+  // no authenticator on this installation: nothing to show or manage about one
+  const mfa: [ReactNode, ReactNode][] = mfaRequired(me)
+    ? [["MFA", me?.user.mfa_enrolled_at ? `${me.user.mfa_type} since ${formatDateTime(me.user.mfa_enrolled_at)}` : "not enrolled"]]
+    : [];
   return (
     <div className="stack">
       <PageHeader title="Your account" actions={<Button variant="danger" onClick={() => void logoutAll()}>Sign out of all devices</Button>} />
@@ -152,8 +157,8 @@ export function ProfilePage() {
               ["Name", me?.user.name],
               ["E-mail", me?.user.email],
               ["Firm", me?.tenant_name],
-              ["Roles", roleCodes(me).map(titleCase).join(", ")],
-              ["MFA", me?.user.mfa_enrolled_at ? `${me.user.mfa_type} since ${formatDateTime(me.user.mfa_enrolled_at)}` : "not enrolled"],
+              ["Roles", hasNoRole(me) ? "None yet — ask your FS-Platform administrator to give you a role" : roleCodes(me).map(titleCase).join(", ")],
+              ...mfa,
               ["AI policy", me?.ai_policy_version ? (me.ai_policy_accepted ? `accepted (v${me.ai_policy_version})` : `not yet accepted (v${me.ai_policy_version})`) : "—"],
               ["Session", me ? `${me.session.auth_method} · idle limit ${me.session.idle_minutes} min · ends ${formatDateTime(me.session.expires_at)}` : ""],
             ]}
@@ -228,6 +233,7 @@ export function HelpPage() {
 }
 
 export function ReleaseNotesPage() {
+  const { me } = useAuth();
   return (
     <div className="stack">
       <PageHeader title="Release notes" />
@@ -239,7 +245,10 @@ export function ReleaseNotesPage() {
           <li>Lakh / crore or million grouping, light and dark themes, keyboard-navigable tables, contextual help.</li>
         </ul>
       </Card>
-      <Notice>Security: sessions are HttpOnly cookies with CSRF protection; administrative actions need a reason and a fresh MFA code.</Notice>
+      <Notice>
+        Security: sessions are HttpOnly cookies with CSRF protection; administrative actions need a reason and{" "}
+        {mfaRequired(me) ? "a fresh MFA code." : "a fresh confirmation with your password."}
+      </Notice>
     </div>
   );
 }
