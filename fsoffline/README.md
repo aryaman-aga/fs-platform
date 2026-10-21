@@ -54,6 +54,20 @@ user, apply and verify, LibreOffice PDF, backup, restart, upgrade, uninstall).
 Sign the installer with the firm's code-signing certificate before distributing it, and record the release in the
 ITGC change log (E-ITGC-01).
 
+### Release the installer
+
+Clients download from one permanent link, which always serves the newest release:
+`https://github.com/<owner>/<repo>/releases/latest/download/FS-Platform-Setup.exe`. For each version:
+
+1. Wait until every check of the release commit is green (the `windows` workflow installed exactly that build).
+2. Download its `fs-platform-windows-installer` artifact; the zip's SHA-256 must equal the artifact's digest on GitHub,
+   and the installer must match its `.sha256`.
+3. Publish it as the latest release under the **fixed** asset name, with a `desktop-v` tag (plain `v*.*.*` tags start the
+   firm-server image release, `.github/workflows/release.yml`):
+   `gh release create desktop-vX.Y.Z --target <commit> --latest FS-Platform-Setup.exe FS-Platform-Setup.exe.sha256`
+   (the `.sha256` names `FS-Platform-Setup.exe`).
+4. Download through the permanent link once and compare the checksum.
+
 ## Commands
 
 ```
