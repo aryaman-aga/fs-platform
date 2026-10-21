@@ -62,6 +62,12 @@ export type MatrixOut = S["MatrixOut"];
 export type InviteOut = S["InviteOut"];
 export type ElevationOut = S["ElevationOut"];
 export type Page = S["Page"];
+export type AuthOptionsOut = S["AuthOptionsOut"];
+export type SetupIn = S["SetupIn"];
+export type SetupOut = S["SetupOut"];
+export type PasswordResetLinkOut = S["PasswordResetLinkOut"];
+export type TenantSettingsOut = S["TenantSettingsOut"];
+export type BackupSettingsOut = S["BackupSettingsOut"];
 
 /** Workflow states of 06 §1 in order (used for the progress rail). */
 export const ENGAGEMENT_STATES = [

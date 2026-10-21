@@ -108,13 +108,17 @@ AI provider (gateway only); firm network ↔ render pool; laptop ↔ firm server
 | T43 | Information disclosure | Data copied out through clipboard / drive / printer redirection | redirection disabled by policy; session time-outs; optional session recording | E-SEC-09 |
 | T44 | Elevation of privilege | Excel macros or add-ins on the server | macros disabled by policy; read-only unless edit rights | E-SEC-09 |
 
-## Mode C (offline laptop)
+## Mode C (desktop edition: one PC or an offline laptop)
 
 | ID | STRIDE | Threat | Mitigation | Requirement / control |
 |---|---|---|---|---|
-| T45 | Information disclosure | Laptop theft | full-disk encryption required; data directory owner-only; secrets generated per install | 07 §4 |
+| T45 | Information disclosure | PC or laptop theft; other Windows accounts reading the data folder | full-disk encryption required; secrets generated per install; installed data folder limited to SYSTEM, Administrators and the *FS-Platform Users* group (well-known SIDs); residual risk: members of that group can read the database files directly, so they must be the people entitled to the firm's data | 07 §4 |
 | T46 | Information disclosure | Network exposure of the local server | launcher binds 127.0.0.1 / ::1 only and refuses any other address | 04 §2 |
 | T47 | Tampering | Tampered package imported to the server | Ed25519-signed, AES-GCM-encrypted .fspkg; signature, hash chain and base version verified; conflicts branch for Manager merge | E-DATA-05 |
+| T48 | Spoofing | Another program or a web page (DNS rebinding) creates the firm and its first administrator before the real user | setup only while no firm exists, from loopback, with a one-time token the launcher writes to the data folder and opens in the browser; Host header limited to 127.0.0.1/localhost/[::1] and Origin checked on writes in the desktop edition | E-SEC-01 |
+| T49 | Elevation of privilege | A lapsed elevation, a disabled account or a former reviewer still counts as holding a role (access-review decisions, last-administrator guard) | expired and disabled assignments are ignored everywhere roles are resolved; a named reviewer decides only while holding a reviewing role; revoking follows the rank rules of granting | C14, E-SEC-04 |
+| T50 | Tampering | Installer or bundled packages replaced before or during the build | downloads pinned by SHA-256 (LibreOffice checksum published by TDF, VC++ runtime checksum in Microsoft's URL); Python packages from a hash-locked requirements file; copyleft or non-Windows binaries fail the build; installer to be code-signed before distribution (unsigned builds trigger SmartScreen) | E-SEC-12 |
+| T51 | Denial of service / repudiation | Sole administrator locked out (forgotten password, lost phone) | recovery codes; administrators reset each other's password or MFA (one-time links, audited); FS-Platform Recovery for the PC's Windows administrator, audited | E-SEC-03 |
 
 ## Residual risks accepted for go-live
 

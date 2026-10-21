@@ -5,26 +5,29 @@ import { useState } from "react";
 import { NavLink, Navigate, useParams } from "react-router-dom";
 
 import { api, apiBlob, saveFile } from "@/api/client";
-import { useClients } from "@/api/hooks";
+import { useAuthOptions, useClients } from "@/api/hooks";
 import type {
   AccessReviewOut,
   AIPolicyOut,
   BackupLogOut,
+  BackupSettingsOut,
   DsrOut,
   ElevationOut,
   HealthOut,
   IncidentOut,
   InviteOut,
   MatrixOut,
+  PasswordResetLinkOut,
   PolicyOut,
   ReleaseRecordOut,
   RoleAssignmentOut,
   RoleOut,
+  TenantSettingsOut,
   UsageOut,
   UserOut,
 } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { adminSections } from "@/auth/permissions";
+import { adminSections, canAny } from "@/auth/permissions";
 import { DataGrid } from "@/components/DataGrid";
 import { Modal } from "@/components/Modal";
 import { useStepUp } from "@/components/StepUp";
@@ -56,6 +59,7 @@ export function AdminPage() {
   if (!active) return <Navigate to={`/admin/${sections[0]?.key}`} replace />;
   const body: Record<string, ReactNode> = {
     users: <Users />,
+    firm: <FirmSettings />,
     roles: <Roles />,
     assignments: <Assignments />,
     elevations: <Elevations />,
@@ -87,34 +91,84 @@ export function AdminPage() {
 
 // ------------------------------------------------------------------ users
 
+/** A link an administrator hands over in person (desktop edition: no e-mail; it opens on this PC). */
+function HandOverLink({ intro, link, expiresAt, testId }: { intro: string; link: string; expiresAt: string; testId: string }) {
+  const toast = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.ok("Link copied");
+    } catch {
+      toast.error(new Error("Could not copy: select the link and copy it."));
+    }
+  };
+  return (
+    <div className="card-body" data-testid={testId}>
+      <Notice>
+        <div className="stack" style={{ gap: 6 }}>
+          <span>
+            {intro}; valid until {formatDateTime(expiresAt)}:
+          </span>
+          <code className="mono" style={{ wordBreak: "break-all" }}>
+            {link}
+          </code>
+          <span className="row">
+            <Button size="sm" onClick={() => void copy()}>
+              Copy link
+            </Button>
+          </span>
+        </div>
+      </Notice>
+    </div>
+  );
+}
+
 function Users() {
   const qc = useQueryClient();
   const toast = useToast();
+  const stepUp = useStepUp();
   const act = useAdminAction();
+  const options = useAuthOptions();
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: () => api<UserOut[]>("/admin/users") });
   const roles = useQuery({ queryKey: ["admin", "roles"], queryFn: () => api<RoleOut[]>("/admin/roles") });
   const clients = useClients();
   const [invite, setInvite] = useState(false);
   const [f, setF] = useState({ email: "", name: "", is_firm_user: true, role_code: "staff", client_id: "" });
   const [link, setLink] = useState<InviteOut | null>(null);
+  const [reset, setReset] = useState<(PasswordResetLinkOut & { user: UserOut }) | null>(null);
+  const onThisPc = options.data?.edition === "desktop" ? " — it opens on this PC" : "";
   const create = useMutation({
     mutationFn: () => api<InviteOut>("/admin/users/invite", { method: "POST", body: { ...f, client_id: f.client_id || null, role_code: f.role_code || null } }),
     onSuccess: async (o) => {
       setLink(o);
+      setReset(null);
       setInvite(false);
-      toast.ok(`Invitation sent to ${o.user.email}`);
+      toast.ok(o.invite_link ? `Invitation created for ${o.user.email}` : `Invitation sent to ${o.user.email}`);
       await qc.invalidateQueries({ queryKey: ["admin", "users"] });
     },
   });
+  const resetPassword = async (u: UserOut) => {
+    try {
+      const out = await stepUp.run(
+        `Reset password for ${u.email}`,
+        (reason) => api<PasswordResetLinkOut>(`/admin/users/${u.id}/password-reset-link`, { method: "POST", reason }),
+        "Creates a one-time link on which they choose a new password. Using it signs them out everywhere; their authenticator stays enrolled.",
+      );
+      setReset({ ...out, user: u });
+      setLink(null);
+      toast.ok(`Password reset link created for ${u.email}`);
+    } catch (e) {
+      if ((e as Error).message !== "cancelled") toast.error(e);
+    }
+  };
   const role = roles.data?.find((r) => r.code === f.role_code);
   return (
     <Card title="Users" actions={<Button variant="primary" onClick={() => setInvite(true)}>Invite user</Button>} bodyClass="">
       {link?.invite_link ? (
-        <div className="card-body">
-          <Notice>
-            Invitation link (shown outside production only; e-mailed in production), valid until {formatDateTime(link.expires_at)}: <code className="mono">{link.invite_link}</code>
-          </Notice>
-        </div>
+        <HandOverLink testId="invite-link" intro={`Give this link to your colleague${onThisPc}`} link={link.invite_link} expiresAt={link.expires_at} />
+      ) : null}
+      {reset ? (
+        <HandOverLink testId="reset-link" intro={`Password reset for ${reset.user.name}: give them this link${onThisPc}`} link={reset.link} expiresAt={reset.expires_at} />
       ) : null}
       {users.isLoading ? <div className="card-body"><Spinner /></div> : null}
       <ErrorNotice error={users.error} />
@@ -126,7 +180,16 @@ function Users() {
           { key: "n", header: "Name", render: (u) => u.name, sortValue: (u) => u.name },
           { key: "e", header: "E-mail", render: (u) => u.email, sortValue: (u) => u.email },
           { key: "t", header: "Type", render: (u) => (u.is_firm_user ? "Firm" : "Client") },
-          { key: "s", header: "Status", render: (u) => <Chip tone={u.status === "active" ? "ok" : u.status === "disabled" ? "danger" : "warn"}>{u.status}</Chip> },
+          {
+            key: "s",
+            header: "Status",
+            render: (u) => (
+              <span className="row">
+                <Chip tone={u.status === "active" ? "ok" : u.status === "disabled" ? "danger" : "warn"}>{u.status}</Chip>
+                {u.must_change_password ? <Chip tone="warn" title="Signed in with a one-time password; must choose their own">one-time password</Chip> : null}
+              </span>
+            ),
+          },
           { key: "m", header: "MFA", render: (u) => (u.mfa_enrolled_at ? `${u.mfa_type} · ${formatDate(u.mfa_enrolled_at)}` : <Chip tone="warn">not enrolled</Chip>) },
           { key: "l", header: "Last sign-in", render: (u) => formatDateTime(u.last_login_at) || "—" },
           {
@@ -143,6 +206,11 @@ function Users() {
                     Disable
                   </Button>
                 )}
+                {u.status !== "disabled" ? (
+                  <Button size="sm" variant="ghost" onClick={() => void resetPassword(u)}>
+                    Reset password
+                  </Button>
+                ) : null}
                 <Button size="sm" variant="ghost" onClick={() => void act(`Reset MFA for ${u.email}`, (reason) => api(`/admin/users/${u.id}/mfa-reset`, { method: "POST", reason }), [["admin", "users"]], "MFA reset; the user enrols again at next sign-in")}>
                   Reset MFA
                 </Button>
@@ -173,6 +241,51 @@ function Users() {
           ) : null}
           <ErrorNotice error={create.error} />
         </Modal>
+      ) : null}
+    </Card>
+  );
+}
+
+// ------------------------------------------------------------------ firm settings
+
+function FirmSettings() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const stepUp = useStepUp();
+  const settings = useQuery({ queryKey: ["admin", "tenant-settings"], queryFn: () => api<TenantSettingsOut>("/admin/tenant-settings") });
+  const [works, setWorks] = useState<boolean | null>(null);
+  const current = settings.data?.works_on_engagements ?? false;
+  const value = works ?? current;
+  const save = async () => {
+    try {
+      await stepUp.run(value ? "Let Firm Admins work on engagements" : "Stop assigning Firm Admins to new clients", (reason) =>
+        api<TenantSettingsOut>("/admin/tenant-settings", { method: "PUT", body: { works_on_engagements: value }, reason }),
+      );
+      toast.ok("Firm settings saved");
+      await qc.invalidateQueries({ queryKey: ["admin", "tenant-settings"] });
+      setWorks(null);
+    } catch (e) {
+      if ((e as Error).message !== "cancelled") toast.error(e);
+    }
+  };
+  return (
+    <Card title="Firm settings">
+      {settings.isLoading ? <Spinner /> : null}
+      <ErrorNotice error={settings.error} />
+      {settings.data ? (
+        <div className="stack">
+          <Checkbox label="Firm Admins also work on engagements" checked={value} onChange={(e) => setWorks(e.target.checked)} />
+          <p className="small muted">
+            When on, a Firm Admin who creates a client is made its Partner automatically, so a small office can prepare and sign off
+            statements without a separate partner account. This weakens segregation of duties: every such assignment is recorded in the
+            audit trail and flagged in access reviews, where another administrator certifies it.
+          </p>
+          <span className="row">
+            <Button variant="primary" disabled={value === current} onClick={() => void save()}>
+              Save
+            </Button>
+          </span>
+        </div>
       ) : null}
     </Card>
   );
@@ -389,6 +502,19 @@ function AccessReviews() {
           { key: "u", header: "User", render: (x) => email(x.user_id) },
           { key: "r", header: "Role", render: (x) => x.role_id.slice(0, 8) },
           { key: "c", header: "Client", render: (x) => x.client_id?.slice(0, 8) ?? "tenant" },
+          {
+            key: "sod",
+            header: "Segregation of duties",
+            className: "wrap",
+            render: (x) =>
+              x.sod_warning ? (
+                <Chip tone="warn" title={x.sod_warning}>
+                  ⚠ {x.sod_warning}
+                </Chip>
+              ) : (
+                ""
+              ),
+          },
           { key: "d", header: "Decision", render: (x) => <Chip tone={x.decision === "certify" ? "ok" : x.decision === "revoke" ? "danger" : "warn"}>{x.decision}</Chip> },
           { key: "due", header: "Due", render: (x) => formatDate(x.due_at) },
           {
@@ -590,22 +716,109 @@ function Dsr() {
 
 // ------------------------------------------------------------------ operations
 
+const BACKUP_KIND: Record<string, string> = {
+  desktop: "Desktop backup",
+  pg_full: "Database (full)",
+  pg_diff: "Database (differential)",
+  wal: "Database log (WAL)",
+  objects: "Files (object store)",
+  config: "Configuration",
+  restore_drill: "Restore drill",
+  key_recovery_drill: "Key recovery drill",
+  restore_request: "Restore request",
+};
+
+/** Where a backup went: its file, and the second copy the desktop launcher made in the backup copy folder. */
+function BackupLocation({ b }: { b: BackupLogOut }) {
+  const d = b.details_json ?? {};
+  const copiedTo = typeof d.copied_to === "string" ? d.copied_to : null;
+  const copyError = typeof d.copy_error === "string" ? d.copy_error : null;
+  return (
+    <span className="stack" style={{ gap: 2 }}>
+      <span className="mono small" style={{ wordBreak: "break-all" }} title={b.location}>
+        {b.location || "—"}
+      </span>
+      {copiedTo ? (
+        <span className="small muted" style={{ wordBreak: "break-all" }}>
+          copy: {copiedTo}
+        </span>
+      ) : null}
+      {copyError ? (
+        <span>
+          <Chip tone="danger" title={copyError}>
+            copy failed
+          </Chip>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function BackupCopyFolder() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const stepUp = useStepUp();
+  const settings = useQuery({ queryKey: ["admin", "backup-settings"], queryFn: () => api<BackupSettingsOut>("/admin/backup-settings") });
+  const [folder, setFolder] = useState<string | null>(null);
+  const current = settings.data?.backup_copy_dir ?? "";
+  const value = folder ?? current;
+  const save = async () => {
+    try {
+      await stepUp.run(value.trim() ? "Set the backup copy folder" : "Stop copying backups", (reason) =>
+        api<BackupSettingsOut>("/admin/backup-settings", { method: "PUT", body: { backup_copy_dir: value.trim() || null }, reason }),
+      );
+      toast.ok(value.trim() ? "Backup copy folder saved" : "Backups are no longer copied");
+      await qc.invalidateQueries({ queryKey: ["admin", "backup-settings"] });
+      setFolder(null);
+    } catch (e) {
+      if ((e as Error).message !== "cancelled") toast.error(e);
+    }
+  };
+  return (
+    <div className="card-body stack" data-testid="backup-copy-folder">
+      <ErrorNotice error={settings.error} />
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <TextInput
+          label="Backup copy folder"
+          value={value}
+          onChange={(e) => setFolder(e.target.value)}
+          placeholder="D:\FS-Platform backups"
+          hint="Desktop edition: every backup is also copied here"
+          style={{ minWidth: 360 }}
+        />
+        <Button variant="primary" disabled={settings.isLoading || value.trim() === current} onClick={() => void save()}>
+          Save
+        </Button>
+      </div>
+      <span className="small muted">
+        Use another drive, a USB disk or a network folder, so that a failed disk does not take the backups with it. Give the full path,
+        starting with the drive letter.
+      </span>
+      {settings.data?.backup_copy_dir && settings.data.exists === false ? (
+        <Notice tone="warn">The folder is not reachable right now (drive unplugged?). Backups are copied there once it is back.</Notice>
+      ) : null}
+    </div>
+  );
+}
+
 function Backups() {
   const act = useAdminAction();
+  const { me } = useAuth();
   const list = useQuery({ queryKey: ["admin", "backups"], queryFn: () => api<BackupLogOut[]>("/admin/backups") });
   return (
     <Card title="Backups and restore drills (07, C13)" bodyClass="">
+      {canAny(me, ["ops.manage", "admin.compliance"]) ? <BackupCopyFolder /> : null}
       <DataGrid
         label="Backup log"
         rows={list.data ?? []}
         rowKey={(b) => b.id}
         empty="No backup records yet. The backup jobs post their results here."
         columns={[
-          { key: "k", header: "Kind", render: (b) => titleCase(b.kind) },
+          { key: "k", header: "Kind", render: (b) => BACKUP_KIND[b.kind] ?? titleCase(b.kind) },
           { key: "s", header: "Status", render: (b) => <Chip tone={b.status === "ok" ? "ok" : b.status === "failed" ? "danger" : "warn"}>{b.status}</Chip> },
           { key: "w", header: "Started", render: (b) => formatDateTime(b.started) },
           { key: "z", header: "Size", className: "num", render: (b) => formatBytes(b.size) },
-          { key: "l", header: "Location", render: (b) => b.location },
+          { key: "l", header: "Location", className: "wrap", render: (b) => <BackupLocation b={b} /> },
           { key: "v", header: "Verified", render: (b) => (b.verified ? <Chip tone="ok">verified</Chip> : "—") },
           {
             key: "a",
@@ -723,9 +936,9 @@ function Health() {
         <KeyValue
           items={[
             ["Render workers", d.render_workers.length ? d.render_workers.map((w) => String(w.worker_id ?? w.id)).join(", ") : "none registered (LibreOffice / built-in renderer)"],
-            ["Last backup", d.last_backup ? `${String(d.last_backup.kind ?? "")} ${formatDateTime(String(d.last_backup.started ?? ""))} — ${String(d.last_backup.status ?? "")}` : "none recorded"],
+            ["Last backup", d.last_backup ? `${BACKUP_KIND[String(d.last_backup.kind)] ?? String(d.last_backup.kind ?? "")} ${formatDateTime(String(d.last_backup.started ?? ""))} — ${String(d.last_backup.status ?? "")}` : "none recorded"],
             ["Last restore drill", d.last_restore_drill ? formatDateTime(String(d.last_restore_drill.started ?? "")) : "none recorded"],
-            ["Audit chain head", d.audit_head ? <span className="mono" key="h">#{String(d.audit_head.seq ?? "")} {shortHash(String(d.audit_head.event_hash ?? ""))}</span> : "—"],
+            ["Audit chain head", d.audit_head ? <span className="mono" key="h">#{String(d.audit_head.seq ?? "")} {shortHash(String(d.audit_head.hash ?? d.audit_head.event_hash ?? ""))}</span> : "—"],
           ]}
         />
       </Card>

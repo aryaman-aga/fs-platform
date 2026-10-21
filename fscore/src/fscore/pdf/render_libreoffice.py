@@ -9,7 +9,7 @@ uses its own LibreOffice user profile so concurrent conversions do not collide.
 
 from __future__ import annotations
 
-import importlib
+import configparser
 import math
 import os
 import shutil
@@ -21,11 +21,11 @@ import uuid
 import zipfile
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from lxml import etree
 
 from fscore.io.ooxml import NS_MAIN, Package, parse_xml, q
+from fscore.io.pdf_reader import page_count
 
 ENGINE = "libreoffice"
 
@@ -39,8 +39,20 @@ _CANDIDATES = (
 )
 
 
+CREATE_NO_WINDOW = 0x08000000
+
+
 class LibreOfficeError(RuntimeError):
     pass
+
+
+def _child_env() -> dict[str, str]:
+    """Environment for child processes: FSWEB_* variables hold secrets and are not passed on."""
+    return {k: v for k, v in os.environ.items() if not k.upper().startswith("FSWEB_")}
+
+
+def _no_window() -> int:
+    return CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 def find_soffice() -> str | None:
@@ -61,14 +73,37 @@ def available() -> bool:
     return find_soffice() is not None
 
 
+def _version_ini(binary: str) -> str | None:
+    """'LibreOffice <version> <build>' from ``program/version.ini`` (Windows' soffice prints no version)."""
+    ini = Path(binary).with_name("version.ini")
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(ini, encoding="utf-8-sig")
+    except (OSError, configparser.Error, UnicodeDecodeError):
+        return None
+    if not parser.has_section("Version"):
+        return None
+    version = parser.get("Version", "MsiProductVersion", fallback="").strip()
+    build = parser.get("Version", "buildid", fallback="").strip()
+    if not version:
+        return None
+    return f"LibreOffice {version} {build}".strip()
+
+
 @lru_cache(maxsize=4)
 def soffice_version(binary: str) -> str:
+    unknown = "LibreOffice (unknown version)"
     try:
-        out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=60, check=False)  # noqa: S603
-        line = (out.stdout or out.stderr).strip().splitlines()
-        return line[0].strip() if line else "LibreOffice (unknown version)"
+        out = subprocess.run(  # noqa: S603 - the located soffice binary, no shell
+            [binary, "--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60, check=False,
+            env=_child_env(), creationflags=_no_window(),
+        )
+        lines = (out.stdout or out.stderr or "").strip().splitlines()
     except (OSError, subprocess.TimeoutExpired):
-        return "LibreOffice (unknown version)"
+        lines = []
+    if lines:
+        return lines[0].strip()
+    return _version_ini(binary) or unknown
 
 
 def excel_fit_scales(src: Path, print_sheets: list[str]) -> dict[str, int]:
@@ -81,23 +116,23 @@ def excel_fit_scales(src: Path, print_sheets: list[str]) -> dict[str, int]:
     from fscore.io.xlsx_reader import Workbook
     from fscore.pdf.render_native import PAPER_SIZES, col_width_pt, plan_sheet
 
-    wb = Workbook.open(src)
     out: dict[str, int] = {}
-    for name in print_sheets:
-        sheet = wb.get_sheet(name)
-        if sheet is None:
-            continue
-        sheet.ensure_loaded()
-        ps = sheet.page
-        if not ps.fit_to_page or ps.fit_to_width < 1:
-            continue
-        widths = [w for a in sheet.print_bounds for c in range(a.c1, a.c2 + 1)
-                  if not sheet.col_hidden(c) and (w := col_width_pt(sheet.col_width(c))) > 0]
-        pw, ph = PAPER_SIZES.get(ps.paper_size, PAPER_SIZES[9])
-        avail_w = (ph if ps.orientation == "landscape" else pw) - 72.0 * (ps.margins["left"] + ps.margins["right"])
-        if len(widths) != 1 or widths[0] <= avail_w * ps.fit_to_width:
-            continue
-        out[sheet.part] = max(10, math.floor(plan_sheet(wb, sheet).scale * 100) - 1)
+    with Workbook.open(src) as wb:  # closed promptly: an open handle blocks deleting the file on Windows
+        for name in print_sheets:
+            sheet = wb.get_sheet(name)
+            if sheet is None:
+                continue
+            sheet.ensure_loaded()
+            ps = sheet.page
+            if not ps.fit_to_page or ps.fit_to_width < 1:
+                continue
+            widths = [w for a in sheet.print_bounds for c in range(a.c1, a.c2 + 1)
+                      if not sheet.col_hidden(c) and (w := col_width_pt(sheet.col_width(c))) > 0]
+            pw, ph = PAPER_SIZES.get(ps.paper_size, PAPER_SIZES[9])
+            avail_w = (ph if ps.orientation == "landscape" else pw) - 72.0 * (ps.margins["left"] + ps.margins["right"])
+            if len(widths) != 1 or widths[0] <= avail_w * ps.fit_to_width:
+                continue
+            out[sheet.part] = max(10, math.floor(plan_sheet(wb, sheet).scale * 100) - 1)
     return out
 
 
@@ -151,10 +186,17 @@ def make_print_copy(src: Path, dst: Path, print_sheets: list[str]) -> None:
             zout.writestr(info, data)
 
 
+def _taskkill() -> str:
+    return os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "taskkill.exe")
+
+
 def _kill_tree(proc: subprocess.Popen[bytes]) -> None:
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)  # noqa: S603,S607
+            subprocess.run(  # noqa: S603 - fixed system binary, no shell
+                [_taskkill(), "/F", "/T", "/PID", str(proc.pid)], stdin=subprocess.DEVNULL, capture_output=True,
+                check=False, env=_child_env(), creationflags=_no_window(),
+            )
         else:
             os.killpg(proc.pid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
@@ -182,10 +224,16 @@ def export_pdf(xlsx_path: Path, pdf_path: Path, sheets: list[str] | None, timeou
             "--outdir", str(work),
             str(copy),
         ]
-        kwargs: dict[str, object] = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
-        if sys.platform != "win32":
+        kwargs: dict[str, object] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
+                                     "env": _child_env()}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = CREATE_NO_WINDOW
+        else:
             kwargs["start_new_session"] = True
-        proc = subprocess.Popen(cmd, **kwargs)  # type: ignore[call-overload]  # noqa: S603
+        try:
+            proc = subprocess.Popen(cmd, **kwargs)  # type: ignore[call-overload]  # noqa: S603
+        except OSError as exc:
+            raise LibreOfficeError(f"LibreOffice could not be started: {exc}") from exc
         try:
             _out, err = proc.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired as exc:
@@ -198,10 +246,10 @@ def export_pdf(xlsx_path: Path, pdf_path: Path, sheets: list[str] | None, timeou
             raise LibreOfficeError(f"LibreOffice conversion failed (exit {proc.returncode}): {msg}")
         Path(pdf_path).parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(pdf_path))
-        pymupdf: Any = importlib.import_module("pymupdf")
-
-        with pymupdf.open(str(pdf_path)) as d:
-            pages = d.page_count
+        try:
+            pages = page_count(Path(pdf_path))
+        except Exception as exc:  # pypdf could not parse what LibreOffice wrote
+            raise LibreOfficeError(f"LibreOffice produced an unreadable PDF: {type(exc).__name__}: {exc}") from exc
         return {"engine": ENGINE, "engine_version": soffice_version(binary), "excel_build": None, "pages": pages}
     finally:
         shutil.rmtree(work, ignore_errors=True)

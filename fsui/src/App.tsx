@@ -1,16 +1,20 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import { useAuthOptions } from "@/api/hooks";
 import { AuthProvider, useAuth } from "@/auth/AuthContext";
 import { isClientUser } from "@/auth/permissions";
 import { PrefsProvider } from "@/components/Prefs";
 import { StepUpProvider } from "@/components/StepUp";
 import { ToastProvider } from "@/components/Toast";
+import { Spinner } from "@/components/ui";
 import { AppShell } from "@/layout/AppShell";
 import { AdminPage } from "@/pages/admin/AdminPages";
-import { AcceptInvitePage, ForgotPasswordPage, LoginPage, MfaEnrollPage, MfaPage, ResetPasswordPage } from "@/pages/auth/AuthPages";
+import { AcceptInvitePage, ChangePasswordPage, ForgotPasswordPage, LoginPage, MfaEnrollPage, MfaPage, ResetPasswordPage } from "@/pages/auth/AuthPages";
+import { SetupPage } from "@/pages/auth/SetupPage";
 import { ClientDetailPage, ClientsPage } from "@/pages/clients/ClientsPages";
 import { Dashboard } from "@/pages/Dashboard";
 import { Workspace } from "@/pages/engagement/Workspace";
@@ -36,33 +40,52 @@ function ScrollTop() {
   return null;
 }
 
+/** A fresh installation (no firm yet) starts at the first-run setup; the launcher's one-time token rides in the hash. */
+function SetupGate({ children }: { children: ReactNode }) {
+  const options = useAuthOptions();
+  const { pathname, hash } = useLocation();
+  if (options.isLoading) {
+    return (
+      <div className="auth-wrap">
+        <Spinner label="Starting FS-Platform" />
+      </div>
+    );
+  }
+  if (options.data?.setup_required && pathname !== "/setup") return <Navigate to={{ pathname: "/setup", hash }} replace />;
+  return <>{children}</>;
+}
+
 export function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/mfa" element={<MfaPage />} />
-      <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/invite" element={<AcceptInvitePage />} />
-      <Route element={<AppShell />}>
-        <Route index element={<Home />} />
-        <Route path="/clients" element={<ClientsPage />} />
-        <Route path="/clients/:clientId" element={<ClientDetailPage />} />
-        <Route path="/engagements/:engagementId" element={<Workspace />} />
-        <Route path="/engagements/:engagementId/:tab" element={<Workspace />} />
-        <Route path="/portal" element={<PortalHome />} />
-        <Route path="/portal/engagements/:engagementId" element={<PortalEngagement />} />
-        <Route path="/audit" element={<AuditSearchPage />} />
-        <Route path="/rules" element={<RulesPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-        <Route path="/admin/:section" element={<AdminPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/help" element={<HelpPage />} />
-        <Route path="/release-notes" element={<ReleaseNotesPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-    </Routes>
+    <SetupGate>
+      <Routes>
+        <Route path="/setup" element={<SetupPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/mfa" element={<MfaPage />} />
+        <Route path="/mfa/enroll" element={<MfaEnrollPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/invite" element={<AcceptInvitePage />} />
+        <Route element={<AppShell />}>
+          <Route index element={<Home />} />
+          <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/clients/:clientId" element={<ClientDetailPage />} />
+          <Route path="/engagements/:engagementId" element={<Workspace />} />
+          <Route path="/engagements/:engagementId/:tab" element={<Workspace />} />
+          <Route path="/portal" element={<PortalHome />} />
+          <Route path="/portal/engagements/:engagementId" element={<PortalEngagement />} />
+          <Route path="/audit" element={<AuditSearchPage />} />
+          <Route path="/rules" element={<RulesPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/:section" element={<AdminPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/help" element={<HelpPage />} />
+          <Route path="/release-notes" element={<ReleaseNotesPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
+    </SetupGate>
   );
 }
 

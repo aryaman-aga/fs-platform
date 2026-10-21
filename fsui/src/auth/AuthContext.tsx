@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { ApiError, api, setCsrfToken, setSessionEndHandler } from "@/api/client";
+import { ApiError, api, setCsrfToken, setPasswordChangeHandler, setSessionEndHandler } from "@/api/client";
 import { qk } from "@/api/hooks";
 import type { MeOut } from "@/api/types";
 
@@ -20,6 +20,8 @@ export interface AuthState {
   refresh: () => Promise<void>;
   can: (permission: string, clientId?: string | null) => boolean;
   signOut: () => Promise<void>;
+  /** Sign out and forget the user's cached data without leaving the page (a colleague takes over this PC). */
+  endSession: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -61,22 +63,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setSessionEndHandler(null);
   }, [qc, navigate]);
 
+  useEffect(() => {
+    // a one-time password: the server refuses everything but the change, so send the user to the form
+    setPasswordChangeHandler(() => {
+      void qc.invalidateQueries({ queryKey: qk.me });
+      navigate("/change-password", { replace: true });
+    });
+    return () => setPasswordChangeHandler(null);
+  }, [qc, navigate]);
+
   const refresh = useCallback(async () => {
     await qc.invalidateQueries({ queryKey: qk.me });
     await qc.refetchQueries({ queryKey: qk.me });
   }, [qc]);
 
-  const signOut = useCallback(async () => {
+  const endSession = useCallback(async () => {
     try {
       await api("/auth/logout", { method: "POST", quiet401: true });
     } catch {
       // already signed out server-side
     }
     setCsrfToken(null);
-    qc.clear();
+    // nothing of the previous user stays in memory; the public sign-in options do
+    qc.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.options[0] });
     qc.setQueryData(qk.me, null);
+  }, [qc]);
+
+  const signOut = useCallback(async () => {
+    await endSession();
     navigate("/login", { replace: true });
-  }, [qc, navigate]);
+  }, [endSession, navigate]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -87,8 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       can: (permission: string, clientId?: string | null) => canFn(me, permission, clientId),
       signOut,
+      endSession,
     }),
-    [me, status, notice, refresh, signOut],
+    [me, status, notice, refresh, signOut, endSession],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

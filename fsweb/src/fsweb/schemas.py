@@ -97,6 +97,7 @@ class UserOut(Out):
     mfa_type: str
     mfa_enrolled_at: datetime | None = None
     last_login_at: datetime | None = None
+    must_change_password: bool = False  # signed in with a one-time password: only the change (and MFA) is allowed
     created_at: datetime
 
 
@@ -122,6 +123,53 @@ class MeOut(Out):
     permissions: dict[str, dict[str, str]]  # client_id ("*" = tenant-wide) -> permission -> value
     ai_policy_version: int | None = None
     ai_policy_accepted: bool = False
+    must_change_password: bool = False  # = user.must_change_password: the UI sends the user to the change form
+
+
+class AuthOptionsOut(Out):
+    """What the sign-in screens offer (public, no session needed)."""
+
+    setup_required: bool  # no firm exists yet and this edition sets one up in the browser (/setup)
+    sso: bool  # firm single sign-on (OIDC) is configured
+    edition: Literal["desktop", "server"]  # desktop = FSWEB_ENV=offline: one PC, loopback only, no e-mail
+    self_service_reset: bool  # "forgot password" e-mails a link (SMTP configured); otherwise an administrator resets it
+
+
+class SetupIn(In):
+    firm_name: str = Field(min_length=1, max_length=200)
+    admin_name: str = Field(min_length=1, max_length=200)
+    admin_email: EmailStr
+    password: str = Field(min_length=1, max_length=256)  # the password policy answers with a readable 400
+    works_on_engagements: bool = False  # the administrator is also made Partner on the clients they create
+    setup_token: str | None = Field(default=None, max_length=512)  # one-time token from the launcher's /setup#token= link
+
+
+class SetupOut(Out):
+    tenant_id: str
+    admin_email: str
+    message: str = "FS-Platform is set up. Sign in, then scan the QR code with your authenticator app."
+
+
+class PasswordResetLinkOut(Out):
+    link: str  # hand it over in person (desktop edition: it opens on this PC); single use
+    expires_at: datetime
+
+
+class TenantSettingsIn(In):
+    works_on_engagements: bool
+
+
+class TenantSettingsOut(Out):
+    works_on_engagements: bool = False
+
+
+class BackupSettingsIn(In):
+    backup_copy_dir: str | None = Field(default=None, max_length=1024)  # absolute folder; empty / null switches the copy off
+
+
+class BackupSettingsOut(Out):
+    backup_copy_dir: str | None = None
+    exists: bool | None = None  # whether the folder exists right now (not reported on the firm server)
 
 
 class InviteAcceptIn(In):
@@ -156,7 +204,8 @@ class InviteIn(In):
 
 class InviteOut(Out):
     user: UserOut
-    invite_link: str | None = None  # returned only outside production (delivered by e-mail otherwise)
+    # returned when the link cannot be e-mailed (desktop edition, or no SMTP) and outside production
+    invite_link: str | None = None
     expires_at: datetime
 
 
@@ -831,6 +880,7 @@ class AccessReviewOut(Out):
     decided_at: datetime | None
     decided_by: str | None
     due_at: datetime
+    sod_warning: str | None = None  # segregation of duties weakened (e.g. a Firm Admin auto-assigned Partner)
 
 
 class AccessDecisionIn(In):
@@ -893,7 +943,8 @@ class IncidentOut(Out):
 
 
 class BackupLogIn(In):
-    kind: Literal["pg_full", "pg_diff", "wal", "objects", "config", "restore_drill", "key_recovery_drill", "restore_request"]
+    # desktop: the desktop edition's backup (database + objects), copied to the backup copy folder when one is set
+    kind: Literal["pg_full", "pg_diff", "wal", "objects", "config", "restore_drill", "key_recovery_drill", "restore_request", "desktop"]
     status: Literal["ok", "failed", "running", "pending_approval"] = "ok"
     size: int = 0
     location: str = ""

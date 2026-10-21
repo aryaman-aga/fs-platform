@@ -19,7 +19,7 @@ approval-gated AI reviewer.
 | [`fsweb/`](fsweb/) | FastAPI platform (`/api/v1`): login + mandatory TOTP MFA, OIDC SSO, RBAC per the permission matrix + ABAC policies + PostgreSQL row-level security, engagement state machine with FINAL-lock gates, immutable file versions, check-out locks, transactional-outbox job queue, maker-checker fix plans, review notes, AI requests bound to payload hashes, hash-chained audit trail, `.fspkg` signed export/import, DPDP / CERT-In / access-review admin. |
 | [`fsui/`](fsui/) | React + TypeScript SPA: dashboard, engagement workspace (files, checks, fix plan, narrative, related parties, PDF, review notes, audit), client portal, admin. |
 | [`fsrender-win/`](fsrender-win/) | Windows render service: licensed Excel via COM, watchdog, pulls render jobs from the API. |
-| [`fsoffline/`](fsoffline/) | Mode C single-PC edition: the same UI on `127.0.0.1`, SQLite, `.fspkg` sync. |
+| [`fsoffline/`](fsoffline/) | Desktop edition for one Windows PC: **`FS-Platform-Setup-<version>.exe`** installs everything (Python runtime, libraries, UI, LibreOffice); tray app on `127.0.0.1`, SQLite with in-place upgrades, first-run setup in the browser, daily backups, a Recovery tool, `.fspkg` sync. See [docs/user-guide/windows-install.md](docs/user-guide/windows-install.md). |
 | [`ops/`](ops/) | Docker Compose (single node) + Helm (HA), Caddy, Cloudflare Tunnel, pgBackRest + restic backups, restore drills, Prometheus alerts with runbooks, Terraform / Ansible skeletons, BCP, ITGC procedures. |
 | [`docs/`](docs/) | ADRs, architecture, STRIDE threat model, ASVS / DPDP / key management, AI policy, user and admin guides, go-live checklist, traceability and control matrices. |
 
@@ -42,6 +42,17 @@ result = api.check_workbook("FS FY26.xlsx", cfg)
 plan = api.propose_fixes("FS FY26.xlsx", cfg, check_result=result)
 fixed = api.apply_fixes("FS FY26.xlsx", plan, "FS FY26 - casting corrected.xlsx", config=cfg)
 ```
+
+## Windows desktop edition (one PC, no server)
+
+```bash
+make windows-installer     # dist/windows/FS-Platform-Setup-<version>.exe (needs NSIS: brew install nsis)
+```
+
+Built from the official embeddable CPython and pinned, hash-checked win_amd64 wheels (no freezer), with the
+Visual C++ runtime and LibreOffice bundled. The `windows` CI workflow installs the result on a clean Windows runner
+and runs an end-to-end smoke test (setup, two users, checks, approved fix, LibreOffice PDF, backup, upgrade,
+uninstall). Hand the client the installer and [the Windows guide](docs/user-guide/windows-install.md).
 
 ## Quick start (platform, development)
 

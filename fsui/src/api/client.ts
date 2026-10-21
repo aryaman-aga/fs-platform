@@ -36,10 +36,16 @@ export class ApiError extends Error {
   get isSessionEnd(): boolean {
     return this.status === 401 && SESSION_CODES.has(this.code);
   }
+
+  /** Signed in with a one-time password: the server serves nothing else until it is changed. */
+  get isPasswordChangeRequired(): boolean {
+    return this.status === 403 && this.code === "password_change_required";
+  }
 }
 
 let memoryCsrf: string | null = null;
 let onSessionEnd: ((err: ApiError) => void) | null = null;
+let onPasswordChangeRequired: ((err: ApiError) => void) | null = null;
 
 export function setCsrfToken(token: string | null | undefined): void {
   memoryCsrf = token ?? null;
@@ -47,6 +53,10 @@ export function setCsrfToken(token: string | null | undefined): void {
 
 export function setSessionEndHandler(fn: ((err: ApiError) => void) | null): void {
   onSessionEnd = fn;
+}
+
+export function setPasswordChangeHandler(fn: ((err: ApiError) => void) | null): void {
+  onPasswordChangeRequired = fn;
 }
 
 export function readCookie(name: string, cookieString: string = typeof document !== "undefined" ? document.cookie : ""): string | null {
@@ -154,6 +164,7 @@ async function send(path: string, opts: RequestOptions): Promise<Response> {
   if (!res.ok) {
     const err = await toError(res, cid);
     if (err.isSessionEnd && !opts.quiet401 && onSessionEnd) onSessionEnd(err);
+    if (err.isPasswordChangeRequired && onPasswordChangeRequired) onPasswordChangeRequired(err);
     throw err;
   }
   return res;

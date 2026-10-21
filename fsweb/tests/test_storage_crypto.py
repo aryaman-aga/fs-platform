@@ -97,3 +97,86 @@ def test_settings_master_key_parsing() -> None:
     assert list(s.master_keys()) == ["old", "new"]
     with pytest.raises(RuntimeError):
         Settings(kms_master_key=base64.b64encode(b"short").decode()).master_keys()
+
+
+def test_local_storage_is_byte_exact(tmp_path: Path) -> None:
+    """Stored files come back byte for byte — on Windows a descriptor opened without O_BINARY would turn \\n into \\r\\n."""
+    store = LocalStorage(tmp_path / "objects")
+    payload = b"PK\x03\x04\n\r\n\x1a\x00" * 1000 + bytes(range(256))
+    key = object_key("t1", "c1", "e1", "files", "book.xlsx")
+    assert store.put_bytes(key, payload).size == len(payload)
+    assert store.get_bytes(key) == payload
+    src = tmp_path / "upload.bin"
+    src.write_bytes(payload)
+    key2 = object_key("t1", "c1", "e1", "files", "copy.bin")
+    store.put_file(key2, src)
+    assert store.download_to(key2, tmp_path / "out" / "copy.bin").read_bytes() == payload
+
+
+def test_native_path_uses_extended_length_form_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fsweb import storage
+
+    assert storage.native_path(Path("/var/objects/a")) == Path("/var/objects/a")  # no drive: unchanged everywhere
+    # patch the module's check, never os.name itself: pathlib reads os.name when it builds paths (Python 3.11)
+    monkeypatch.setattr(storage, "_windows", lambda: True)
+    assert str(storage.native_path(Path("C:\\ProgramData\\FSPlatform\\objects\\t"))) == "\\\\?\\C:\\ProgramData\\FSPlatform\\objects\\t"
+    assert str(storage.native_path(Path("\\\\server\\share\\objects"))) == "\\\\?\\UNC\\server\\share\\objects"
+    already = Path("\\\\?\\C:\\x")
+    assert storage.native_path(already) == already
+    assert storage.native_path(Path("objects")) == Path("objects")  # relative: unchanged
+
+
+@pytest.mark.skipif(os.name != "nt", reason="MAX_PATH applies to Windows only")
+def test_deep_object_keys_beyond_max_path_on_windows(tmp_path: Path) -> None:
+    store = LocalStorage(tmp_path / "objects")
+    ids = ["0" * 8 + "-1111-2222-3333-" + "4" * 12] * 4
+    key = object_key(ids[0], ids[1], ids[2], "runs", ids[3], "register-0123456789ab-Exceptions register with a long name.xlsx")
+    assert len(str(tmp_path / "objects" / key)) > 260
+    store.put_bytes(key, b"data\n")
+    assert store.get_bytes(key) == b"data\n" and store.exists(key)
+
+
+def test_clamd_over_tcp(tmp_path: Path) -> None:
+    """Windows has no Unix sockets: clamd is reached over tcp://host:port."""
+    import socket
+    import struct
+    import threading
+
+    from fsweb.services.uploads import UploadRejected, clamav_scan
+
+    server = socket.create_server(("127.0.0.1", 0))
+    port = server.getsockname()[1]
+    received: list[bytes] = []
+
+    def fake_clamd() -> None:
+        conn, _ = server.accept()
+        with conn:
+            buf = b""
+            while not buf.endswith(struct.pack("!L", 0)):
+                buf += conn.recv(65536)
+            received.append(buf)
+            conn.sendall(b"stream: Eicar-Test-Signature FOUND\0")
+
+    t = threading.Thread(target=fake_clamd, daemon=True)
+    t.start()
+    assert clamav_scan(f"tcp://127.0.0.1:{port}", b"X5O!P%@AP") == "Eicar-Test-Signature"
+    t.join(5)
+    server.close()
+    assert received and received[0].startswith(b"zINSTREAM\0")
+    with pytest.raises(UploadRejected) as exc:
+        clamav_scan(f"tcp://127.0.0.1:{port}", b"data", timeout=1.0)  # nothing listens any more
+    assert exc.value.code == "scanner_unavailable"
+
+
+@pytest.mark.parametrize("bad", ["t/1/c/2/e/3/files/x.xlsx:stream", "t/1/c/2/e/3/files/CON", "t/1/c/2/e/3/files/nul.txt",
+                                 "t/1/c/2/e/3/files/name.", "t/1/c/2/e/3/files/name ", "t/1/c/2/e/3/files/a|b", "t/1//x"])
+def test_keys_that_windows_cannot_store_are_refused(tmp_path: Path, bad: str) -> None:
+    with pytest.raises(StorageError):
+        LocalStorage(tmp_path / "objects").put_bytes(bad, b"x")
+
+
+def test_object_key_makes_names_portable() -> None:
+    from fsweb.storage import safe_segment
+
+    assert object_key("t", "c", "e", "files", "FS: FY26?.xlsx") == "t/t/c/c/e/e/files/FS_ FY26_.xlsx"
+    assert safe_segment("CON") == "_CON" and safe_segment("report. ") == "report" and safe_segment("...") == "_"

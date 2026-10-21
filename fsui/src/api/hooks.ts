@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "./client";
 import type {
+  AuthOptionsOut,
   ClientOut,
   EngagementOut,
   FileOut,
@@ -16,6 +17,7 @@ import type {
 
 export const qk = {
   me: ["me"] as const,
+  options: ["auth-options"] as const,
   engagements: (filter?: Record<string, string | undefined>) => ["engagements", filter ?? {}] as const,
   engagement: (id: string) => ["engagement", id] as const,
   gates: (id: string) => ["engagement", id, "gates"] as const,
@@ -40,6 +42,16 @@ export const qk = {
   clients: ["clients"] as const,
   client: (id: string) => ["client", id] as const,
 };
+
+/** Public sign-in options: first-run setup, firm SSO, edition (desktop / server), self-service password reset. */
+export function useAuthOptions() {
+  return useQuery({
+    queryKey: qk.options,
+    queryFn: () => api<AuthOptionsOut>("/auth/options", { quiet401: true }),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
 
 export function useEngagements(filter?: { status?: string; client_id?: string }) {
   return useQuery({

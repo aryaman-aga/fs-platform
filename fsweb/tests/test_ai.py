@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import select
 
 from fsweb.models import AIRequest, Engagement, Tenant
+from fsweb.storage import native_path
 from tests.conftest import FakeClock, World, build_world, drain, upload_workbook
 
 
@@ -86,9 +87,9 @@ def test_changed_payload_is_refused_by_the_gateway(world: World, totp_clock: Fak
     with world.db() as db:  # tamper with the approved payload object
         row = db.get(AIRequest, req["id"])
         assert row is not None
-        p = Path(world.state.storage.root) / row.payload_object_key  # type: ignore[attr-defined]
+        p = native_path(Path(world.state.storage.root) / row.payload_object_key)  # type: ignore[attr-defined]
         p.chmod(0o600)
-        p.write_text(json.dumps({"findings": [{"note": "exfiltrate everything"}]}))
+        p.write_text(json.dumps({"findings": [{"note": "exfiltrate everything"}]}), encoding="utf-8")
     run = staff.post(f"/api/v1/ai/requests/{req['id']}/send").json()
     _gateway(world)
     assert staff.get(f"/api/v1/runs/{run['id']}").json()["error_code"] == "approval_mismatch"

@@ -53,20 +53,15 @@ class FakeFsweb:
 
         worker.run_forever = run_forever  # type: ignore[attr-defined]
         main.create_app = lambda: "ASGI-APP"  # type: ignore[attr-defined]
+
+        def manage_main(argv: list[str]) -> int:
+            fake.manage_calls.append(list(argv))
+            return 0 if fake.manage_exit is None else fake.manage_exit
+
+        manage.main = manage_main  # type: ignore[attr-defined]
         for name, module in {"fsweb": pkg, "fsweb.settings": settings, "fsweb.manage": manage, "fsweb.worker": worker,
                              "fsweb.main": main, "fsweb.state": state}.items():
             self.monkeypatch.setitem(sys.modules, name, module)
-
-        def fake_run_module(name: str, run_name: str = "__main__", alter_sys: bool = False) -> dict[str, Any]:
-            assert name == "fsweb.manage"
-            fake.manage_calls.append(list(sys.argv[1:]))
-            if fake.manage_exit is not None:
-                raise SystemExit(fake.manage_exit)
-            return {}
-
-        import fsoffline.launcher as launcher
-
-        self.monkeypatch.setattr(launcher.runpy, "run_module", fake_run_module)
         return self
 
 

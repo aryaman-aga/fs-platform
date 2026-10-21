@@ -839,30 +839,28 @@ def _emit_twin(ctx: CheckContext, a: Loc, b: Loc, status: str, why: str) -> None
 
 
 def _pdf_lines(path: Path) -> list[tuple[str, list[Decimal]]]:
-    """Caption + amounts per printed line of a signed PDF (PyMuPDF, local)."""
-    import pymupdf
+    """Caption + amounts per printed line of a signed PDF (plain whitespace-delimited words, local)."""
+    from fscore.io.pdf_reader import read_pdf_words
 
     out: list[tuple[str, list[Decimal]]] = []
-    with pymupdf.open(str(path)) as doc:  # type: ignore[no-untyped-call]
-        for page in doc:
-            lines: dict[int, list[tuple[float, str]]] = defaultdict(list)
-            for w in page.get_text("words"):
-                x0, y0, y1, text = w[0], w[1], w[3], w[4]
-                lines[round((y0 + y1) / 4)].append((x0, text))  # 2-point line buckets
-            for _y, ws in sorted(lines.items()):
-                ws.sort()
-                caption_parts: list[str] = []
-                amounts: list[Decimal] = []
-                for _x, text in ws:
-                    num = parse_printed_number(text)
-                    if num is not None and (("." in text) or text.strip() in ("-",) or "," in text):
-                        amounts.append(num)
-                    elif num is not None and not amounts and re.fullmatch(r"\d{1,2}", text):
-                        continue  # note number column
-                    elif not amounts:
-                        caption_parts.append(text)
-                if caption_parts and amounts:
-                    out.append((" ".join(caption_parts), amounts))
+    for words in read_pdf_words(path):
+        lines: dict[int, list[tuple[float, str]]] = defaultdict(list)
+        for w in words:
+            lines[round((w.y0 + w.y1) / 4)].append((w.x0, w.text))  # 2-point line buckets
+        for _y, ws in sorted(lines.items()):
+            ws.sort()
+            caption_parts: list[str] = []
+            amounts: list[Decimal] = []
+            for _x, text in ws:
+                num = parse_printed_number(text)
+                if num is not None and (("." in text) or text.strip() in ("-",) or "," in text):
+                    amounts.append(num)
+                elif num is not None and not amounts and re.fullmatch(r"\d{1,2}", text):
+                    continue  # note number column
+                elif not amounts:
+                    caption_parts.append(text)
+            if caption_parts and amounts:
+                out.append((" ".join(caption_parts), amounts))
     return out
 
 

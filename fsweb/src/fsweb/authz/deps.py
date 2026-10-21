@@ -171,9 +171,10 @@ def _session_from_request(request: Request, db: Session, *, require_mfa: bool) -
     return sess, user
 
 
-def _principal(request: Request, db: Session, *, require_mfa: bool) -> Principal:
+def _principal(request: Request, db: Session, *, require_mfa: bool, password_change_pending_ok: bool = False) -> Principal:
     st = get_state(request)
     sess, user = _session_from_request(request, db, require_mfa=require_mfa)
+    must_change = bool(user.must_change_password)
     roles = load_roles(db, user.id)
     p = Principal(
         tenant_id=user.tenant_id,
@@ -196,6 +197,9 @@ def _principal(request: Request, db: Session, *, require_mfa: bool) -> Principal
         sess.last_seen_at = now
     set_rls(db, p.rls())
     db.commit()
+    if must_change and not password_change_pending_ok:
+        # A one-time / generated password: nothing but sign-in, MFA, /auth/me, sign-out and the change itself.
+        raise forbidden("change your one-time password before you continue", "password_change_required")
     request.state.principal = p
     request.state.user_id = p.user_id
     _ = st
@@ -207,7 +211,13 @@ def require_principal(request: Request, db: Session = Depends(get_db)) -> Princi
 
 
 def require_pre_mfa(request: Request, db: Session = Depends(get_db)) -> Principal:
-    return _principal(request, db, require_mfa=False)
+    """Before MFA (and while a password change is pending): /auth/me, sign-out and the MFA endpoints."""
+    return _principal(request, db, require_mfa=False, password_change_pending_ok=True)
+
+
+def require_principal_password_change(request: Request, db: Session = Depends(get_db)) -> Principal:
+    """MFA-verified, and allowed while a password change is pending: the password change and sign-out everywhere."""
+    return _principal(request, db, require_mfa=True, password_change_pending_ok=True)
 
 
 # ------------------------------------------------------------------ matrix cache

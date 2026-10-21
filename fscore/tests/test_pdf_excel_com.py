@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import pymupdf
 import pytest
+from helpers_pdf import make_workbook
+from reportlab.pdfgen import canvas
 
+from fscore.config import EngagementConfig
 from fscore.pdf import render_excel_com as xl
+from fscore.pdf import render_libreoffice
+from fscore.pdf.render import fallback_engines, render
 
 
 class FakeSheet:
@@ -24,11 +29,11 @@ class FakeSheet:
         self.app.calls.append(("ExportAsFixedFormat", kw))
         if self.app.export_delay:
             time.sleep(self.app.export_delay)
-        doc = pymupdf.open()
+        pdf = canvas.Canvas(kw["Filename"])
         for name in [c[1] for c in self.app.calls if c[0] == "Select"]:
-            doc.new_page().insert_text((72, 72), name)
-        doc.save(kw["Filename"])
-        doc.close()
+            pdf.drawString(72, 720, name)
+            pdf.showPage()
+        pdf.save()
 
 
 class FakeSheets:
@@ -143,3 +148,109 @@ def test_not_available_off_windows(tmp_path: Path) -> None:
         pytest.skip("running on Windows with pywin32")
     with pytest.raises(xl.ExcelComError, match="Windows"):
         xl.export_pdf(tmp_path / "a.xlsx", tmp_path / "a.pdf", None)
+
+
+class FakeComError(Exception):
+    """Stands in for pywintypes.com_error (not importable off Windows)."""
+
+
+@pytest.fixture
+def excel_probe(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Pretend to be on Windows; the registry and pywin32 probes are patched per test."""
+    xl._excel_registered.cache_clear()
+    monkeypatch.setattr(xl, "_on_windows", lambda: True)
+    monkeypatch.setattr(xl, "_pywin32_loads", lambda: True)
+    yield
+    xl._excel_registered.cache_clear()
+
+
+@pytest.mark.usefixtures("excel_probe")
+def test_not_available_when_excel_is_not_registered(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(xl, "_registered_clsid", lambda _prog_id: None)
+    assert not xl.available()
+
+
+@pytest.mark.usefixtures("excel_probe")
+def test_available_when_excel_is_registered_and_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    probes: list[str] = []
+
+    def clsid(prog_id: str) -> str:
+        probes.append(prog_id)
+        return "{00024500-0000-0000-C000-000000000046}"
+
+    monkeypatch.setattr(xl, "_registered_clsid", clsid)
+    assert xl.available()
+    assert xl.available()
+    assert probes == ["Excel.Application"]  # looked up once per process
+
+
+@pytest.mark.usefixtures("excel_probe")
+def test_not_available_when_pywin32_is_broken(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(xl, "_registered_clsid", lambda _prog_id: "{00024500-0000-0000-C000-000000000046}")
+    monkeypatch.setattr(xl, "_pywin32_loads", lambda: False)
+    assert not xl.available()
+
+
+@pytest.mark.parametrize("error", [FakeComError(-2147221005, "Invalid class string", None, None), OSError("access denied")])
+def test_dispatch_failure_is_an_excel_error(tmp_path: Path, error: Exception) -> None:
+    def dispatch() -> Any:
+        raise error
+
+    with pytest.raises(xl.ExcelComError, match="could not be started"):
+        xl.export_pdf(tmp_path / "in.xlsx", tmp_path / "o.pdf", ["BS"], 30, _dispatch=dispatch,
+                      _pid_of=lambda _a: 1, _kill=lambda _p: None, _alive=lambda _p: False)
+
+
+def test_com_error_while_driving_excel_is_an_excel_error(tmp_path: Path) -> None:
+    app = FakeApp()
+
+    def broken_open(*_args: Any) -> Any:
+        raise FakeComError(-2147352567, "Exception occurred.", None, None)
+
+    app.Workbooks.Open = broken_open  # type: ignore[method-assign]
+    with pytest.raises(xl.ExcelComError, match="Excel export failed"):
+        xl.export_pdf(tmp_path / "in.xlsx", tmp_path / "o.pdf", ["BS"], 30, _dispatch=lambda: app,
+                      _pid_of=lambda _a: 7, _kill=lambda _p: None, _alive=lambda _p: False)
+    assert ("Quit",) in app.calls
+
+
+def _excel_that_cannot_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    def dispatch() -> Any:
+        raise FakeComError(-2147221005, "Invalid class string", None, None)
+
+    monkeypatch.setattr(xl, "available", lambda: True)
+    monkeypatch.setattr(xl, "_default_dispatch", dispatch)
+
+
+def test_auto_falls_back_to_the_builtin_renderer_when_excel_cannot_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _excel_that_cannot_start(monkeypatch)
+    monkeypatch.setattr(render_libreoffice, "available", lambda: False)
+    cfg = EngagementConfig(client="Corvus")
+    assert fallback_engines("excel", "auto", "draft", cfg) == ["native"]
+    assert fallback_engines("excel", "excel", "draft", cfg) == []  # an explicit engine never falls back
+    res = render(make_workbook(tmp_path / "wb.xlsx"), tmp_path / "out", mode="draft", engine="auto", config=cfg, run_id="R-F")
+    assert res.ok, res.message
+    assert res.engine == "native"
+    assert "Excel failed" in res.message and "built-in renderer" in res.message
+    explicit = render(make_workbook(tmp_path / "wb2.xlsx"), tmp_path / "out2", mode="draft", engine="excel", config=cfg)
+    assert not explicit.ok
+    assert "could not be started" in explicit.message
+
+
+def test_final_auto_does_not_fall_back_to_native_without_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FSCORE_ALLOW_NATIVE_FINAL", raising=False)
+    _excel_that_cannot_start(monkeypatch)
+    monkeypatch.setattr(render_libreoffice, "available", lambda: False)
+    assert fallback_engines("excel", "auto", "final", EngagementConfig()) == []
+
+
+@pytest.mark.libreoffice
+def test_auto_falls_back_to_libreoffice_when_excel_cannot_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if not render_libreoffice.available():
+        pytest.skip("LibreOffice (soffice) not installed")
+    _excel_that_cannot_start(monkeypatch)
+    res = render(make_workbook(tmp_path / "wb.xlsx"), tmp_path / "out", mode="draft", engine="auto",
+                 config=EngagementConfig(client="Corvus"), run_id="R-LF")
+    assert res.ok, res.message
+    assert res.engine == "libreoffice"
+    assert "Excel failed" in res.message

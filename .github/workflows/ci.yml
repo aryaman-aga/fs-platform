@@ -74,7 +74,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libreoffice-calc fonts-crosextra-carlito \
             fonts-crosextra-caladea fonts-liberation fonts-dejavu-core fonts-noto-core
-      - run: pip install -e "fscore[dev]" pytest
+      - run: pip install -e "fscore[dev,ai]" pytest
       - name: LibreOffice render and recalculation tests
         run: pytest -m libreoffice fscore/tests
 
@@ -142,7 +142,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Filesystem vulnerability scan (Trivy)
-        uses: aquasecurity/trivy-action@0.33.1
+        # pinned by commit: the action's old tags were removed after the March 2026 compromise; v0.36.0 is an
+        # immutable release
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: fs
           scan-ref: .

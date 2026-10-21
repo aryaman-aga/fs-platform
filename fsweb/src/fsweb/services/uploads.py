@@ -113,11 +113,25 @@ def validate(name: str, data: bytes, *, max_mb: int, dlp: bool = True) -> Upload
     return info
 
 
-def clamav_scan(sock_path: str, data: bytes, timeout: float = 30.0) -> str | None:  # pragma: no cover - needs clamd
-    """INSTREAM scan through clamd. Returns the signature name if infected."""
+def _clamd_socket(address: str, timeout: float) -> socket.socket:
+    """``tcp://host:port`` (any platform) or a Unix socket path (not available on Windows)."""
+    if address.startswith("tcp://"):
+        host, _, port = address[len("tcp://"):].rpartition(":")
+        return socket.create_connection((host or "127.0.0.1", int(port)), timeout=timeout)
+    if not hasattr(socket, "AF_UNIX"):
+        raise OSError("clamd over a Unix socket is not available on this platform; set FSWEB_CLAMD_SOCKET=tcp://host:port")
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
-    s.connect(sock_path)
+    s.connect(address)
+    return s
+
+
+def clamav_scan(sock_path: str, data: bytes, timeout: float = 30.0) -> str | None:  # pragma: no cover - needs clamd
+    """INSTREAM scan through clamd. Returns the signature name if infected; an unreachable scanner rejects the upload."""
+    try:
+        s = _clamd_socket(sock_path, timeout)
+    except OSError as exc:
+        raise UploadRejected("scanner_unavailable", "the malware scanner is not reachable; try again or ask IT") from exc
     try:
         s.sendall(b"zINSTREAM\0")
         for i in range(0, len(data), 1 << 16):

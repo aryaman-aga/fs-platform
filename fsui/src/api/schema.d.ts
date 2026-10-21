@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/auth/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Options
+         * @description Public: what the sign-in screens offer. ``setup_required`` sends a fresh desktop installation to /setup.
+         */
+        get: operations["auth_options_api_v1_auth_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -237,7 +257,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Password Change */
+        /**
+         * Password Change
+         * @description Also the forced change after a one-time password (the only data endpoint served until it is done).
+         */
         post: operations["password_change_api_v1_auth_password_change_post"];
         delete?: never;
         options?: never;
@@ -273,6 +296,26 @@ export interface paths {
         get: operations["oidc_callback_api_v1_auth_oidc_callback_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * First Run Setup
+         * @description Create the firm (roles, permission matrix, policies, audit head) and its Firm Admin. Once only: 409 afterwards.
+         */
+        post: operations["first_run_setup_api_v1_setup_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -382,6 +425,49 @@ export interface paths {
          * @description MFA reset is admin-only (08 §3), with step-up and a reason.
          */
         post: operations["mfa_reset_api_v1_admin_users__user_id__mfa_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/password-reset-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Password Reset Link
+         * @description A reset link to hand over in person (no e-mail on the desktop edition). Step-up and a reason, like the MFA reset;
+         *     the user chooses the new password on the reset page, which signs out their sessions.
+         */
+        post: operations["password_reset_link_api_v1_admin_users__user_id__password_reset_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenant-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tenant Settings */
+        get: operations["get_tenant_settings_api_v1_admin_tenant_settings_get"];
+        /**
+         * Put Tenant Settings
+         * @description ``works_on_engagements``: a Firm Admin who creates a client is also made its Partner. That weakens segregation of
+         *     duties, so changing it needs step-up and a reason; each such assignment is audited and flagged in access reviews.
+         */
+        put: operations["put_tenant_settings_api_v1_admin_tenant_settings_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1998,6 +2084,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/backup-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Backup Settings */
+        get: operations["get_backup_settings_api_v1_admin_backup_settings_get"];
+        /**
+         * Put Backup Settings
+         * @description Desktop edition: the launcher copies every backup into this folder too (another drive, a USB disk, a share).
+         */
+        put: operations["put_backup_settings_api_v1_admin_backup_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/releases": {
         parameters: {
             query?: never;
@@ -2460,6 +2567,8 @@ export interface components {
              * Format: date-time
              */
             due_at: string;
+            /** Sod Warning */
+            sod_warning?: string | null;
         };
         /** ApplyNarrativeOut */
         ApplyNarrativeOut: {
@@ -2555,13 +2664,30 @@ export interface components {
              */
             expires_at: string;
         };
+        /**
+         * AuthOptionsOut
+         * @description What the sign-in screens offer (public, no session needed).
+         */
+        AuthOptionsOut: {
+            /** Setup Required */
+            setup_required: boolean;
+            /** Sso */
+            sso: boolean;
+            /**
+             * Edition
+             * @enum {string}
+             */
+            edition: "desktop" | "server";
+            /** Self Service Reset */
+            self_service_reset: boolean;
+        };
         /** BackupLogIn */
         BackupLogIn: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "pg_full" | "pg_diff" | "wal" | "objects" | "config" | "restore_drill" | "key_recovery_drill" | "restore_request";
+            kind: "pg_full" | "pg_diff" | "wal" | "objects" | "config" | "restore_drill" | "key_recovery_drill" | "restore_request" | "desktop";
             /**
              * Status
              * @default ok
@@ -2617,6 +2743,18 @@ export interface components {
             details_json: {
                 [key: string]: unknown;
             };
+        };
+        /** BackupSettingsIn */
+        BackupSettingsIn: {
+            /** Backup Copy Dir */
+            backup_copy_dir?: string | null;
+        };
+        /** BackupSettingsOut */
+        BackupSettingsOut: {
+            /** Backup Copy Dir */
+            backup_copy_dir?: string | null;
+            /** Exists */
+            exists?: boolean | null;
         };
         /** BalancingApproveIn */
         BalancingApproveIn: {
@@ -3508,6 +3646,11 @@ export interface components {
              * @default false
              */
             ai_policy_accepted: boolean;
+            /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
         };
         /** MfaCodeIn */
         MfaCodeIn: {
@@ -3647,6 +3790,16 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** PasswordResetLinkOut */
+        PasswordResetLinkOut: {
+            /** Link */
+            link: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
         /** PolicyIn */
         PolicyIn: {
             /** Body */
@@ -3781,6 +3934,13 @@ export interface components {
             approved_at: string | null;
             /** Deployed At */
             deployed_at: string | null;
+            /** Review Due At */
+            review_due_at?: string | null;
+            /**
+             * Review Overdue
+             * @default false
+             */
+            review_overdue: boolean;
             /** Rollback Plan */
             rollback_plan: string;
             /** Created By */
@@ -4092,6 +4252,36 @@ export interface components {
              */
             current: boolean;
         };
+        /** SetupIn */
+        SetupIn: {
+            /** Firm Name */
+            firm_name: string;
+            /** Admin Name */
+            admin_name: string;
+            /** Admin Email */
+            admin_email: string;
+            /** Password */
+            password: string;
+            /**
+             * Works On Engagements
+             * @default false
+             */
+            works_on_engagements: boolean;
+            /** Setup Token */
+            setup_token?: string | null;
+        };
+        /** SetupOut */
+        SetupOut: {
+            /** Tenant Id */
+            tenant_id: string;
+            /** Admin Email */
+            admin_email: string;
+            /**
+             * Message
+             * @default FS-Platform is set up. Sign in, then scan the QR code with your authenticator app.
+             */
+            message: string;
+        };
         /** ShareLinkIn */
         ShareLinkIn: {
             /** Recipient User Id */
@@ -4149,6 +4339,19 @@ export interface components {
             valid_from?: string | null;
             /** Valid To */
             valid_to?: string | null;
+        };
+        /** TenantSettingsIn */
+        TenantSettingsIn: {
+            /** Works On Engagements */
+            works_on_engagements: boolean;
+        };
+        /** TenantSettingsOut */
+        TenantSettingsOut: {
+            /**
+             * Works On Engagements
+             * @default false
+             */
+            works_on_engagements: boolean;
         };
         /** TransitionIn */
         TransitionIn: {
@@ -4224,6 +4427,11 @@ export interface components {
             /** Last Login At */
             last_login_at?: string | null;
             /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -4258,6 +4466,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    auth_options_api_v1_auth_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthOptionsOut"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -4719,6 +4947,75 @@ export interface operations {
             };
         };
     };
+    first_run_setup_api_v1_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOut"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: never;
@@ -4918,6 +5215,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    password_reset_link_api_v1_admin_users__user_id__password_reset_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetLinkOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tenant_settings_api_v1_admin_tenant_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettingsOut"];
+                };
+            };
+        };
+    };
+    put_tenant_settings_api_v1_admin_tenant_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSettingsOut"];
                 };
             };
             /** @description Validation Error */
@@ -8427,6 +8808,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BackupLogOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backup_settings_api_v1_admin_backup_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSettingsOut"];
+                };
+            };
+        };
+    };
+    put_backup_settings_api_v1_admin_backup_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupSettingsOut"];
                 };
             };
             /** @description Validation Error */
