@@ -116,12 +116,14 @@ def test_local_storage_is_byte_exact(tmp_path: Path) -> None:
 def test_native_path_uses_extended_length_form_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     from fsweb import storage
 
-    assert storage.native_path(Path("/var/objects/a")) == Path("/var/objects/a")  # unchanged elsewhere
-    monkeypatch.setattr(storage.os, "name", "nt")
+    assert storage.native_path(Path("/var/objects/a")) == Path("/var/objects/a")  # no drive: unchanged everywhere
+    # patch the module's check, never os.name itself: pathlib reads os.name when it builds paths (Python 3.11)
+    monkeypatch.setattr(storage, "_windows", lambda: True)
     assert str(storage.native_path(Path("C:\\ProgramData\\FSPlatform\\objects\\t"))) == "\\\\?\\C:\\ProgramData\\FSPlatform\\objects\\t"
     assert str(storage.native_path(Path("\\\\server\\share\\objects"))) == "\\\\?\\UNC\\server\\share\\objects"
     already = Path("\\\\?\\C:\\x")
     assert storage.native_path(already) == already
+    assert storage.native_path(Path("objects")) == Path("objects")  # relative: unchanged
 
 
 @pytest.mark.skipif(os.name != "nt", reason="MAX_PATH applies to Windows only")

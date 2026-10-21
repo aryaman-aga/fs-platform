@@ -95,7 +95,7 @@ def instance_lock(path: Path) -> Iterator[None]:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError:
             try:
-                pid = int(path.read_text().strip() or "0")
+                pid = int(path.read_text(encoding="ascii").strip() or "0")
             except (OSError, ValueError):
                 pid = 0
             if _pid_alive(pid):

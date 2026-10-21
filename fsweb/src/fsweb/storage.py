@@ -82,12 +82,20 @@ O_BINARY = getattr(os, "O_BINARY", 0)
 def native_path(p: Path) -> Path:
     """Windows: the extended-length form of an absolute path, so deep object keys (three UUIDs, a run id and a file
     name) are not cut off at the 260-character MAX_PATH limit. Other platforms: unchanged."""
-    if os.name != "nt":
+    if not _windows():
         return p
     s = str(p)
     if s.startswith("\\\\?\\"):
         return p
-    return Path("\\\\?\\UNC\\" + s[2:]) if s.startswith("\\\\") else Path("\\\\?\\" + s)
+    if s.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + s[2:])
+    if len(s) > 2 and s[1] == ":" and s[2] == "\\":
+        return Path("\\\\?\\" + s)
+    return p  # relative or without a drive: the extended-length form needs a full path
+
+
+def _windows() -> bool:
+    return os.name == "nt"
 
 
 class LocalStorage:
@@ -100,7 +108,7 @@ class LocalStorage:
 
     def _path(self, key: str) -> Path:
         key = _check_key(key)
-        if os.name == "nt":  # the key is already checked segment by segment: no resolve() of a possibly over-long path
+        if _windows():  # the key is already checked segment by segment: no resolve() of a possibly over-long path
             return native_path(self.root.joinpath(*key.split("/")))
         p = (self.root / key).resolve()
         if self.root not in p.parents:

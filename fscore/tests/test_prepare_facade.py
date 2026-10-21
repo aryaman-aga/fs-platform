@@ -16,13 +16,14 @@ from fscore.synthetic.ledger import generate_books
 
 def _export(books, d: Path) -> tuple[Path, Path]:  # type: ignore[no-untyped-def]
     tb = d / "tb.csv"
-    with tb.open("w", newline="") as fh:
+    with tb.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["Account", "Account Name", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5", "FS Grouping", "Mar-26", "Mar-25"])
         for a in books.tb.accounts:
             w.writerow([a.code, a.name, *a.levels[:5], a.key, str(a.amount("CY")), str(a.amount("PY"))])
     bundle = d / "inputs.yaml"
-    bundle.write_text(yaml.safe_dump(dump(books.years, opening=books.opening, entity=books.entity), sort_keys=False, allow_unicode=True))
+    bundle.write_text(yaml.safe_dump(dump(books.years, opening=books.opening, entity=books.entity), sort_keys=False, allow_unicode=True),
+                      encoding="utf-8")
     return tb, bundle
 
 

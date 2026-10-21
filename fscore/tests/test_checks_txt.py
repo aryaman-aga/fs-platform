@@ -23,7 +23,9 @@ def find(spec: WorkbookSpec, sheet: str, text: str, nth: int = 0) -> tuple[int, 
 
 def run(tmp_path: Path, spec: WorkbookSpec, prefixes: tuple[str, ...] = ("TXT-",), config: EngagementConfig | None = None):
     p = write(spec, tmp_path / "wb.xlsx")
-    return run_rules(p, prefixes, config)
+    ctx = run_rules(p, prefixes, config)
+    ctx.wb.close()  # tests write wb.xlsx again, and Windows cannot replace a file that is still open
+    return ctx
 
 
 def rules(ctx, rule_id: str) -> list:
