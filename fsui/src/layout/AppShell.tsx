@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
-import { navItems, roleCodes } from "@/auth/permissions";
+import { mustChangePassword, navItems, roleCodes } from "@/auth/permissions";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePrefs } from "@/components/Prefs";
 import { Button, Spinner } from "@/components/ui";
@@ -76,6 +76,7 @@ export function AppShell() {
   }
   if (status === "anonymous") return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   if (status === "mfa") return <Navigate to={me?.user.mfa_enrolled_at ? "/mfa" : "/mfa/enroll"} replace />;
+  if (mustChangePassword(me)) return <Navigate to="/change-password" replace />;
 
   const items = navItems(me);
   const work = items.filter((i) => i.section === "work");

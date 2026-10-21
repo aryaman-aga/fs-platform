@@ -1,4 +1,5 @@
-"""Login, MFA, step-up, sessions, invites, password reset and OIDC SSO (05 §1, E-SEC-01/03)."""
+"""Login, MFA, step-up, sessions, invites, password reset and OIDC SSO (05 §1, E-SEC-01/03), and the public
+sign-in options the UI starts from (first-run setup, SSO, edition, self-service reset)."""
 
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from fsweb.authz.deps import (
     permission_value,
     require_pre_mfa,
     require_principal,
+    require_principal_password_change,
 )
 from fsweb.authz.permissions import PERMISSION_CODES
 from fsweb.db import RLSContext, set_rls, utcnow
@@ -40,10 +42,23 @@ from fsweb.models import (
 from fsweb.security import passwords, sessions, totp
 from fsweb.security.crypto import hash_token, new_token
 from fsweb.security.oidc import OIDCClient, OIDCError, pkce_pair
+from fsweb.services import accounts
 from fsweb.services.common import notify, users_with_role
 
 router = APIRouter(tags=["auth"])
 seclog = logging.getLogger("fsweb.security")
+
+
+@router.get("/auth/options", response_model=schemas.AuthOptionsOut)
+def auth_options(request: Request, db: Session = Depends(get_db)) -> schemas.AuthOptionsOut:
+    """Public: what the sign-in screens offer. ``setup_required`` sends a fresh desktop installation to /setup."""
+    s = get_state(request).settings
+    return schemas.AuthOptionsOut(
+        setup_required=accounts.setup_allowed(s) and not accounts.tenant_exists(db),
+        sso=bool(s.oidc_issuer and s.oidc_client_id),
+        edition="desktop" if accounts.edition(s) == "desktop" else "server",
+        self_service_reset=accounts.email_delivery(s),
+    )
 
 
 def _actor_for(user: User, request: Request) -> audit.Actor:
@@ -238,7 +253,7 @@ def logout(request: Request, response: Response, p: Principal = Depends(require_
 
 
 @router.post("/auth/logout-all", response_model=schemas.OkOut)
-def logout_all(request: Request, response: Response, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.OkOut:
+def logout_all(request: Request, response: Response, p: Principal = Depends(require_principal_password_change), db: Session = Depends(get_db)) -> schemas.OkOut:
     n = sessions.revoke_all(db, p.user_id)
     audit.append(db, p.actor(), "auth.logout_all", object_type="user", object_id=p.user_id, details={"sessions": n})
     db.commit()
@@ -293,6 +308,7 @@ def me(request: Request, p: Principal = Depends(require_pre_mfa), db: Session = 
         permissions=perms,
         ai_policy_version=ai_pol.version if ai_pol else None,
         ai_policy_accepted=bool(ai_pol and user.ai_policy_version == ai_pol.version),
+        must_change_password=bool(user.must_change_password),
     )
 
 
@@ -335,6 +351,7 @@ def accept_invite(body: schemas.InviteAcceptIn, request: Request, db: Session = 
     set_rls(db, RLSContext(user.tenant_id, user.id, "auth"))
     user.password_hash = passwords.hash_password(body.password)
     user.password_changed_at = utcnow()
+    user.must_change_password = False
     user.status = "active"
     inv.used_at = utcnow()
     audit.append(db, _actor_for(user, request), "user.invite_accepted", object_type="user", object_id=user.id)
@@ -347,12 +364,11 @@ def password_forgot(body: schemas.PasswordForgotIn, request: Request, db: Sessio
     st = get_state(request)
     if not st.limiter.hit(f"forgot:{client_ip(request)}", 10, 60):
         raise too_many()
+    if st.settings.env == "offline":  # no e-mail on the desktop edition: no token that nobody would receive
+        return schemas.OkOut(message="this edition sends no e-mail: ask your administrator to reset your password")
     user = db.execute(select(User).where(User.email == body.email.lower())).scalar_one_or_none()
     if user is not None and user.status == "active" and not user.sso_subject:
-        token = new_token()
-        db.add(PasswordReset(tenant_id=user.tenant_id, user_id=user.id, token_hash=hash_token(token),
-                             expires_at=utcnow() + timedelta(minutes=st.settings.reset_minutes)))
-        link = f"{st.settings.public_base_url}/reset-password?token={token}"
+        link = accounts.create_reset_token(db, st.settings, user, utcnow() + timedelta(minutes=st.settings.reset_minutes))
         notify(db, user.tenant_id, user.email, "FS-Platform password reset", f"Reset your password within {st.settings.reset_minutes} minutes: {link}", "password_reset")
         audit.append(db, _actor_for(user, request), "auth.password_reset_requested", object_type="user", object_id=user.id)
         db.commit()
@@ -370,20 +386,29 @@ def password_reset(body: schemas.PasswordResetIn, request: Request, db: Session 
         passwords.check_policy(body.password, email=user.email, name=user.name)
     except passwords.PasswordPolicyError as exc:
         raise bad_request("password_policy", str(exc)) from exc
+    if user.status == "disabled":
+        raise bad_request("reset_invalid", "the account is disabled")
     set_rls(db, RLSContext(user.tenant_id, user.id, "auth"))
     user.password_hash = passwords.hash_password(body.password)
     user.password_changed_at = utcnow()
+    user.must_change_password = False
     user.failed_logins = 0
     user.locked_until = None
+    activated = user.status == "invited"
+    if activated:  # an administrator's link for someone whose invitation lapsed: choosing the password accepts it
+        user.status = "active"
     pr.used_at = utcnow()
     sessions.revoke_all(db, user.id)
-    audit.append(db, _actor_for(user, request), "auth.password_reset", object_type="user", object_id=user.id)
+    audit.append(db, _actor_for(user, request), "auth.password_reset", object_type="user", object_id=user.id,
+                 details={"activated": True} if activated else None)
     db.commit()
     return schemas.OkOut(message="password changed; sign in again")
 
 
 @router.post("/auth/password/change", response_model=schemas.OkOut)
-def password_change(body: schemas.PasswordChangeIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.OkOut:
+def password_change(body: schemas.PasswordChangeIn, request: Request, p: Principal = Depends(require_principal_password_change),
+                    db: Session = Depends(get_db)) -> schemas.OkOut:
+    """Also the forced change after a one-time password (the only data endpoint served until it is done)."""
     user = db.get(User, p.user_id)
     assert user is not None
     if not passwords.verify_password(user.password_hash, body.current_password):
@@ -392,10 +417,17 @@ def password_change(body: schemas.PasswordChangeIn, request: Request, p: Princip
         passwords.check_policy(body.new_password, email=user.email, name=user.name)
     except passwords.PasswordPolicyError as exc:
         raise bad_request("password_policy", str(exc)) from exc
+    if body.new_password == body.current_password:
+        raise bad_request("password_policy", "choose a new password, not the current one")
+    forced = bool(user.must_change_password)
     user.password_hash = passwords.hash_password(body.new_password)
     user.password_changed_at = utcnow()
+    user.must_change_password = False
     n = sessions.revoke_all(db, user.id, except_session_id=p.session_id)
-    audit.append(db, p.actor(), "auth.password_changed", object_type="user", object_id=user.id, details={"other_sessions_revoked": n})
+    details: dict[str, object] = {"other_sessions_revoked": n}
+    if forced:
+        details["replaced_one_time_password"] = True
+    audit.append(db, p.actor(), "auth.password_changed", object_type="user", object_id=user.id, details=details)
     db.commit()
     return schemas.OkOut(message="password changed")
 

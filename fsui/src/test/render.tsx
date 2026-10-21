@@ -11,7 +11,12 @@ import { ToastProvider } from "@/components/Toast";
 
 export type Routes = Record<string, unknown | ((init?: RequestInit) => unknown)>;
 
-/** Mock fetch by path prefix (longest match wins); unmatched requests return 404. */
+/** An error (or any non-200) answer for a mocked route: `"/api/v1/setup": () => reply(403, {...})`. */
+export function reply(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/** Mock fetch by path prefix (longest match wins); unmatched requests return 404. A route may answer with a Response. */
 export function mockApi(routes: Routes) {
   const calls: { url: string; init?: RequestInit }[] = [];
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -24,6 +29,7 @@ export function mockApi(routes: Routes) {
     if (!key) return new Response(JSON.stringify({ error: { code: "not_found", message: "not found" } }), { status: 404, headers: { "Content-Type": "application/json" } });
     const r = routes[key];
     const body = typeof r === "function" ? (r as (init?: RequestInit) => unknown)(init) : r;
+    if (body instanceof Response) return body;
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   vi.stubGlobal("fetch", fn);

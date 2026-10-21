@@ -2,10 +2,32 @@
   "openapi": "3.1.0",
   "info": {
     "title": "FS-Platform API",
-    "description": "Ind AS financial statement preparation and review platform. Every endpoint requires an authenticated, MFA-verified session (cookie `fs_session`) and the `X-CSRF-Token` header for unsafe methods, except the login / invite / password-reset flows and the internal render-worker protocol (`X-Worker-Token`).",
+    "description": "Ind AS financial statement preparation and review platform. Every endpoint requires an authenticated, MFA-verified session (cookie `fs_session`) and the `X-CSRF-Token` header for unsafe methods, except the login / invite / password-reset flows, the sign-in options, the desktop edition's first-run setup and the internal render-worker protocol (`X-Worker-Token`).",
     "version": "1.0.0"
   },
   "paths": {
+    "/api/v1/auth/options": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Options",
+        "description": "Public: what the sign-in screens offer. ``setup_required`` sends a fresh desktop installation to /setup.",
+        "operationId": "auth_options_api_v1_auth_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthOptionsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -471,6 +493,7 @@
           "auth"
         ],
         "summary": "Password Change",
+        "description": "Also the forced change after a one-time password (the only data endpoint served until it is done).",
         "operationId": "password_change_api_v1_auth_password_change_post",
         "requestBody": {
           "content": {
@@ -552,6 +575,88 @@
         "responses": {
           "302": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/setup": {
+      "post": {
+        "tags": [
+          "setup"
+        ],
+        "summary": "First Run Setup",
+        "description": "Create the firm (roles, permission matrix, policies, audit head) and its Firm Admin. Once only: 409 afterwards.",
+        "operationId": "first_run_setup_api_v1_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -835,6 +940,110 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OkOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{user_id}/password-reset-link": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Password Reset Link",
+        "description": "A reset link to hand over in person (no e-mail on the desktop edition). Step-up and a reason, like the MFA reset;\nthe user chooses the new password on the reset page, which signs out their sessions.",
+        "operationId": "password_reset_link_api_v1_admin_users__user_id__password_reset_link_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetLinkOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tenant-settings": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Tenant Settings",
+        "operationId": "get_tenant_settings_api_v1_admin_tenant_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Put Tenant Settings",
+        "description": "``works_on_engagements``: a Firm Admin who creates a client is also made its Partner. That weakens segregation of\nduties, so changing it needs step-up and a reason; each such assignment is audited and flagged in access reviews.",
+        "operationId": "put_tenant_settings_api_v1_admin_tenant_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSettingsOut"
                 }
               }
             }
@@ -6045,6 +6254,67 @@
         }
       }
     },
+    "/api/v1/admin/backup-settings": {
+      "get": {
+        "tags": [
+          "compliance & operations"
+        ],
+        "summary": "Get Backup Settings",
+        "operationId": "get_backup_settings_api_v1_admin_backup_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSettingsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "compliance & operations"
+        ],
+        "summary": "Put Backup Settings",
+        "description": "Desktop edition: the launcher copies every backup into this folder too (another drive, a USB disk, a share).",
+        "operationId": "put_backup_settings_api_v1_admin_backup_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupSettingsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupSettingsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/releases": {
       "get": {
         "tags": [
@@ -7195,6 +7465,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Due At"
+          },
+          "sod_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sod Warning"
           }
         },
         "type": "object",
@@ -7491,6 +7772,39 @@
         ],
         "title": "AuthOkOut"
       },
+      "AuthOptionsOut": {
+        "properties": {
+          "setup_required": {
+            "type": "boolean",
+            "title": "Setup Required"
+          },
+          "sso": {
+            "type": "boolean",
+            "title": "Sso"
+          },
+          "edition": {
+            "type": "string",
+            "enum": [
+              "desktop",
+              "server"
+            ],
+            "title": "Edition"
+          },
+          "self_service_reset": {
+            "type": "boolean",
+            "title": "Self Service Reset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "setup_required",
+          "sso",
+          "edition",
+          "self_service_reset"
+        ],
+        "title": "AuthOptionsOut",
+        "description": "What the sign-in screens offer (public, no session needed)."
+      },
       "BackupLogIn": {
         "properties": {
           "kind": {
@@ -7503,7 +7817,8 @@
               "config",
               "restore_drill",
               "key_recovery_drill",
-              "restore_request"
+              "restore_request",
+              "desktop"
             ],
             "title": "Kind"
           },
@@ -7632,6 +7947,53 @@
           "details_json"
         ],
         "title": "BackupLogOut"
+      },
+      "BackupSettingsIn": {
+        "properties": {
+          "backup_copy_dir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Copy Dir"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BackupSettingsIn"
+      },
+      "BackupSettingsOut": {
+        "properties": {
+          "backup_copy_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Copy Dir"
+          },
+          "exists": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exists"
+          }
+        },
+        "type": "object",
+        "title": "BackupSettingsOut"
       },
       "BalancingApproveIn": {
         "properties": {
@@ -10374,6 +10736,11 @@
             "type": "boolean",
             "title": "Ai Policy Accepted",
             "default": false
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           }
         },
         "type": "object",
@@ -10788,6 +11155,25 @@
         ],
         "title": "PasswordResetIn"
       },
+      "PasswordResetLinkOut": {
+        "properties": {
+          "link": {
+            "type": "string",
+            "title": "Link"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "link",
+          "expires_at"
+        ],
+        "title": "PasswordResetLinkOut"
+      },
       "PolicyIn": {
         "properties": {
           "body": {
@@ -11098,6 +11484,23 @@
               }
             ],
             "title": "Deployed At"
+          },
+          "review_due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Due At"
+          },
+          "review_overdue": {
+            "type": "boolean",
+            "title": "Review Overdue",
+            "default": false
           },
           "rollback_plan": {
             "type": "string",
@@ -12027,6 +12430,83 @@
         ],
         "title": "SessionInfo"
       },
+      "SetupIn": {
+        "properties": {
+          "firm_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Firm Name"
+          },
+          "admin_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Admin Name"
+          },
+          "admin_email": {
+            "type": "string",
+            "maxLength": 320,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Admin Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          },
+          "works_on_engagements": {
+            "type": "boolean",
+            "title": "Works On Engagements",
+            "default": false
+          },
+          "setup_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "firm_name",
+          "admin_name",
+          "admin_email",
+          "password"
+        ],
+        "title": "SetupIn"
+      },
+      "SetupOut": {
+        "properties": {
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "admin_email": {
+            "type": "string",
+            "title": "Admin Email"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "FS-Platform is set up. Sign in, then scan the QR code with your authenticator app."
+          }
+        },
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "admin_email"
+        ],
+        "title": "SetupOut"
+      },
       "ShareLinkIn": {
         "properties": {
           "recipient_user_id": {
@@ -12235,6 +12715,31 @@
         ],
         "title": "SignatoryOut"
       },
+      "TenantSettingsIn": {
+        "properties": {
+          "works_on_engagements": {
+            "type": "boolean",
+            "title": "Works On Engagements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "works_on_engagements"
+        ],
+        "title": "TenantSettingsIn"
+      },
+      "TenantSettingsOut": {
+        "properties": {
+          "works_on_engagements": {
+            "type": "boolean",
+            "title": "Works On Engagements",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "TenantSettingsOut"
+      },
       "TransitionIn": {
         "properties": {
           "to": {
@@ -12435,6 +12940,11 @@
               }
             ],
             "title": "Last Login At"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": false
           },
           "created_at": {
             "type": "string",

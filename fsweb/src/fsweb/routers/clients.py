@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from fsweb import audit, schemas
 from fsweb.authz.deps import Principal, authorize, check_if_match, etag, get_db, get_state, require_principal
 from fsweb.errors import bad_request, not_found
-from fsweb.models import Client, Entity, Role, Signatory, User
-from fsweb.services.seed import assign
+from fsweb.models import Client, Entity, Role, Signatory, Tenant, User
+from fsweb.services.accounts import AUTO_PARTNER_EVENT
+from fsweb.services.seed import WORKS_ON_ENGAGEMENTS, assign, tenant_settings
 
 router = APIRouter(tags=["clients"])
 
@@ -49,6 +50,7 @@ def create_client(body: schemas.ClientIn, request: Request, p: Principal = Depen
     db.add(c)
     db.flush()
     # The creating Partner / Manager is assigned to the new client so they can work on it.
+    auto_partner = None
     if not p.is_firm_admin:
         mine = p.all_roles & {"partner", "manager"}
         if mine:
@@ -57,7 +59,17 @@ def create_client(body: schemas.ClientIn, request: Request, p: Principal = Depen
             user = db.get(User, p.user_id)
             assert user is not None
             assign(db, p.tenant_id, user, role, c.id, p.user_id)
+    elif p.is_firm_user and tenant_settings(db.get(Tenant, p.tenant_id)).get(WORKS_ON_ENGAGEMENTS):
+        # The firm's administrators also prepare statements (small office): the creating Firm Admin becomes Partner.
+        role = db.execute(select(Role).where(Role.tenant_id == p.tenant_id, Role.code == "partner")).scalar_one()
+        user = db.get(User, p.user_id)
+        assert user is not None
+        auto_partner = assign(db, p.tenant_id, user, role, c.id, p.user_id)
     audit.append(db, p.actor(), "client.created", client_id=c.id, object_type="client", object_id=c.id, details={"office": c.office})
+    if auto_partner is not None:
+        audit.append(db, p.actor(), AUTO_PARTNER_EVENT, client_id=c.id, object_type="assignment", object_id=auto_partner.id,
+                     details={"user_id": p.user_id, "role": "partner", "setting": WORKS_ON_ENGAGEMENTS,
+                              "segregation_of_duties": "weakened: the Firm Admin also works on this client as Partner"})
     db.commit()
     return client_out(request, db, c)
 

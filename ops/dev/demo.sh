@@ -19,8 +19,8 @@ export FSWEB_SERVE_UI="$PWD/fsui/dist"
 [ -f "$DATA/kms" ] || "$PY" -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())" > "$DATA/kms"
 export FSWEB_SECRET_KEY="$(cat "$DATA/secret")"
 export FSWEB_KMS_MASTER_KEY="$(cat "$DATA/kms")"
+"$PY" -m fsweb.manage migrate >/dev/null  # every start: an existing demo database is upgraded in place
 if [ ! -f "$DATA/seed.json" ]; then
-  "$PY" -m fsweb.manage migrate >/dev/null
   "$PY" -m fsweb.manage seed-demo > "$DATA/seed.json"
   echo "demo seeded: credentials and TOTP secrets in $DATA/seed.json (dev only)"
 fi

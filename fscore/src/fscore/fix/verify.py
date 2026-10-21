@@ -33,10 +33,10 @@ CASTING_RULES = {"CAST-01", "CAST-02", "CAST-03", "PLUG-01"}
 
 
 def soffice_path() -> str | None:
-    for cand in (shutil.which("soffice"), shutil.which("libreoffice"), "/Applications/LibreOffice.app/Contents/MacOS/soffice"):
-        if cand and Path(cand).exists():
-            return cand
-    return None
+    """The same LibreOffice the renderer uses (FSCORE_SOFFICE, PATH, then the usual install folders)."""
+    from fscore.pdf.render_libreoffice import find_soffice
+
+    return find_soffice()
 
 
 def _structure(wb: Workbook, sheets: set[str]) -> dict[str, Any]:
@@ -135,7 +135,7 @@ def libreoffice_recalc_compare(out: Path, sheets: list[str], timeout: int = 180)
         shutil.copy2(out, src)
         outdir = work / "out"
         outdir.mkdir()
-        cmd = [exe, f"-env:UserInstallation=file://{profile}", "--headless", "--norestore", "--convert-to", "xlsx:Calc MS Excel 2007 XML", "--outdir", str(outdir), str(src)]
+        cmd = [exe, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore", "--convert-to", "xlsx:Calc MS Excel 2007 XML", "--outdir", str(outdir), str(src)]
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)  # noqa: S603 - fixed local binary, no shell
         produced = outdir / "in.xlsx"
         if not produced.exists():

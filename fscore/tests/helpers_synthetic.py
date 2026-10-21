@@ -13,11 +13,10 @@ from typing import Any
 
 from fscore.engine.display import render
 from fscore.io.xlsx_reader import Workbook
+from fscore.pdf.render_libreoffice import find_soffice
 from fscore.synthetic.generator import SyntheticResult, make_workbook
 
 _CACHE_DIR = Path(tempfile.mkdtemp(prefix="fs-synth-"))
-
-SOFFICE_CANDIDATES = ("/Applications/LibreOffice.app/Contents/MacOS/soffice", "soffice", "libreoffice")
 
 
 @lru_cache(maxsize=64)
@@ -44,11 +43,7 @@ def display(value: Any, fmt: str) -> Decimal | None:
 
 
 def soffice() -> str | None:
-    for cand in SOFFICE_CANDIDATES:
-        p = shutil.which(cand) if not cand.startswith("/") else (cand if Path(cand).exists() else None)
-        if p:
-            return p
-    return None
+    return find_soffice()
 
 
 def libreoffice_recalc(src: Path, out_dir: Path) -> Path:
@@ -58,8 +53,8 @@ def libreoffice_recalc(src: Path, out_dir: Path) -> Path:
         raise RuntimeError("LibreOffice not available")
     profile = out_dir / f"lo-profile-{uuid.uuid4().hex}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [exe, f"-env:UserInstallation=file://{profile}", "--headless", "--norestore", "--convert-to", "xlsx:Calc MS Excel 2007 XML",
-           "--outdir", str(out_dir / "lo"), str(src)]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=240)
+    cmd = [exe, f"-env:UserInstallation={profile.resolve().as_uri()}", "--headless", "--norestore", "--convert-to",
+           "xlsx:Calc MS Excel 2007 XML", "--outdir", str(out_dir / "lo"), str(src)]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=240, stdin=subprocess.DEVNULL)
     shutil.rmtree(profile, ignore_errors=True)
     return out_dir / "lo" / src.name

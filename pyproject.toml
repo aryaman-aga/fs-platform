@@ -48,7 +48,4 @@ markers = [
 ]
 filterwarnings = [
   "ignore::DeprecationWarning:openpyxl.*",
-  "ignore:The `fitz` API is deprecated:FutureWarning",
-  "ignore:builtin type Swig.*:DeprecationWarning",
-  "ignore:builtin type swig.*:DeprecationWarning",
 ]

@@ -40,6 +40,10 @@ def default_data_dir(platform: str | None = None, env: Mapping[str, str] | None 
     home = Path.home() if home is None else home
     if override := env.get("FSOFFLINE_DATA_DIR"):
         return Path(override)
+    from fsoffline.install import load_install_config
+
+    if (installed := load_install_config().data_dir) is not None:  # an installed copy: the machine-wide data folder
+        return installed
     if platform.startswith("win"):
         base = env.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
         return Path(base) / APP_DIR_NAME / "offline"
@@ -50,14 +54,15 @@ def default_data_dir(platform: str | None = None, env: Mapping[str, str] | None 
 
 
 def bundled_ui_dist(env: Mapping[str, str] | None = None) -> Path | None:
-    """The built SPA: env override, the PyInstaller bundle, or the repository checkout."""
+    """The built SPA: env override, the installed copy, or the repository checkout."""
     env = os.environ if env is None else env
     candidates: list[Path] = []
     if override := env.get("FSOFFLINE_UI_DIST"):
         candidates.append(Path(override))
-    bundle_root = getattr(sys, "_MEIPASS", None)
-    if bundle_root:
-        candidates.append(Path(bundle_root) / "fsui" / "dist")
+    from fsoffline.install import load_install_config
+
+    if (installed := load_install_config().ui_dir) is not None:
+        candidates.append(installed)
     candidates.append(Path(__file__).resolve().parents[3] / "fsui" / "dist")
     for candidate in candidates:
         if (candidate / "index.html").is_file():
@@ -98,6 +103,24 @@ class OfflineSettings:
         return self.data_dir / "fsoffline.lock"
 
     @property
+    def logs_dir(self) -> Path:
+        return self.data_dir / "logs"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
+
+    @property
+    def runtime_path(self) -> Path:
+        """Port and process of the running server (a second launch only opens the browser)."""
+        return self.data_dir / "runtime.json"
+
+    @property
+    def setup_token_path(self) -> Path:
+        """One-time token that authorises first-run setup (written only while no firm exists)."""
+        return self.secrets_dir / "setup.token"
+
+    @property
     def trusted_keys_path(self) -> Path:
         """Public keys (base64, one per line) of servers whose packages may be imported."""
         return self.data_dir / "trusted_package_keys.txt"
@@ -111,7 +134,8 @@ def _private_dir(path: Path) -> None:
 
 def ensure_layout(settings: OfflineSettings) -> None:
     _private_dir(settings.data_dir)
-    for sub in (settings.objects_dir, settings.work_dir, settings.secrets_dir, settings.audit_head_dir):
+    for sub in (settings.objects_dir, settings.work_dir, settings.secrets_dir, settings.audit_head_dir, settings.logs_dir,
+                settings.backups_dir):
         _private_dir(sub)
 
 
@@ -124,8 +148,8 @@ def load_or_create_secret(path: Path, nbytes: int = 32) -> bytes:
         return data
     path.parent.mkdir(parents=True, exist_ok=True)
     value = secrets.token_bytes(nbytes)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="ascii") as handle:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="ascii", newline="\n") as handle:
         handle.write(base64.b64encode(value).decode("ascii") + "\n")
     return value
 
@@ -171,9 +195,15 @@ def build_env(settings: OfflineSettings, port: int, env_name: str = "offline") -
         "FSWEB_ALLOWED_ORIGINS": origin,
         "FSWEB_PUBLIC_BASE_URL": origin,
         "FSWEB_OFFICE_CIDRS": "127.0.0.1/32,::1/128",
-        "FSWEB_AI_ENABLED": "false",  # offline by default (03 §3.7)
+        "FSWEB_AI_ENABLED": "true" if ai_enabled(settings) else "false",  # off unless an administrator turned it on
         "FSWEB_LOG_LEVEL": "INFO",
+        "FSWEB_SETUP_TOKEN_FILE": settings.setup_token_path.as_posix(),
     }
+    from fsoffline.install import load_install_config
+
+    soffice = load_install_config().soffice
+    if soffice is not None and soffice.is_file():  # the LibreOffice bundled with the installed copy
+        env["FSCORE_SOFFICE"] = str(soffice)
     trusted = _trusted_keys(settings)
     if trusted:
         env["FSWEB_PKG_TRUSTED_KEYS"] = ",".join(trusted)
@@ -181,6 +211,13 @@ def build_env(settings: OfflineSettings, port: int, env_name: str = "offline") -
     if ui is not None:
         env["FSWEB_SERVE_UI"] = ui.as_posix()
     return env
+
+
+def ai_enabled(settings: OfflineSettings) -> bool:
+    """AI review stays off (nothing leaves the PC) until ``ai_enabled = true`` is set in ``<data>\fsplatform.ini``."""
+    from fsoffline.install import load_data_config
+
+    return load_data_config(settings.data_dir).get("ai_enabled", "false").strip().lower() in ("1", "true", "yes", "on")
 
 
 def redacted(env: Mapping[str, str]) -> dict[str, str]:

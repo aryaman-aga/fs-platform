@@ -6,7 +6,7 @@ PGPORT  ?= 54329
 export FSWEB_TEST_PG_URL ?= postgresql+psycopg://fsweb_owner:fsweb_owner@127.0.0.1:$(PGPORT)/fsweb_test
 
 .PHONY: help setup lint typecheck test test-core test-web test-ui test-e2e test-all fixtures fixtures-freeze \
-        run-api run-worker run-ui pg-start pg-stop sbom audit build-ui demo try clean
+        run-api run-worker run-ui pg-start pg-stop sbom audit build-ui demo try windows-lock windows-installer clean
 
 help:  ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -70,6 +70,16 @@ demo:  ## seed a demo tenant with users for every role
 
 try: build-ui  ## everything on http://127.0.0.1:8700 (SQLite, demo users in var/demo/seed.json)
 	ops/dev/demo.sh 8700
+
+windows-lock:  ## resolve the Windows desktop bundle's packages (hashes; versions pinned to this dev environment)
+	mkdir -p build/windows
+	$(PIP) freeze --exclude-editable | grep -v -E '^(fscore|fsweb|fsoffline|fsrender)' > build/windows/dev-constraints.txt
+	$(PY) -m uv pip compile fsoffline/packaging/requirements-windows.txt --python-platform x86_64-pc-windows-msvc \
+	  --python-version 3.13 --generate-hashes --no-annotate --constraint build/windows/dev-constraints.txt \
+	  --custom-compile-command "make windows-lock" -o fsoffline/packaging/requirements-windows.lock
+
+windows-installer:  ## build dist/windows/FS-Platform-Setup-<version>.exe (needs makensis; runs on macOS, Linux or Windows)
+	$(PY) fsoffline/packaging/build_windows.py
 
 sbom:  ## CycloneDX SBOM for the Python packages
 	$(PY) -m cyclonedx_py environment -o sbom.json

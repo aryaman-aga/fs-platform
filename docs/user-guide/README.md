@@ -13,6 +13,7 @@ firm SSO) and an authenticator app code. The platform never needs a client file 
 | Client – Viewer | [client-viewer.md](client-viewer.md) |
 | Firm Admin | [firm-admin.md](firm-admin.md) |
 | Command line (`fscheck`, offline engine) | [cli.md](cli.md) |
+| **Windows PC (desktop edition): install, first run, colleagues, backups** | [windows-install.md](windows-install.md) |
 
 **Ground rules for everyone**
 - The original upload is never changed; every fix produces a new version you can compare and restore.

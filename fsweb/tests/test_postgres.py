@@ -8,6 +8,7 @@ Needs a server: FSWEB_TEST_PG_URL (owner role with CREATEDB) and FSWEB_TEST_PG_A
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import Iterator
 from datetime import date
@@ -54,10 +55,25 @@ def pg(tmp_path: Path) -> Iterator[dict[str, str]]:
 
     run_migrations(owner.render_as_string(hide_password=False))
     yield {"owner": owner.render_as_string(hide_password=False), "app": app.render_as_string(hide_password=False)}
-    with eng.connect() as c:
-        c.execute(text(f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{name}' AND pid <> pg_backend_pid()"))
-        c.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+    _drop_database(eng, name)
     eng.dispose()
+
+
+def _drop_database(eng: Any, name: str, wait_s: float = 30.0) -> None:
+    """Drop a test database. The owner may end only its own sessions; one of the runtime role's that is still being
+    closed (a busy machine) is waited for instead of failing the test."""
+    deadline = time.monotonic() + wait_s
+    with eng.connect() as c:
+        while True:
+            c.execute(text("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :n AND pid <> pg_backend_pid() "
+                           "AND usename = current_user"), {"n": name})
+            try:
+                c.execute(text(f'DROP DATABASE IF EXISTS "{name}"'))
+                return
+            except DBAPIError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.5)
 
 
 def _seed(owner_url: str) -> dict[str, Any]:

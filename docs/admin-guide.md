@@ -84,8 +84,12 @@ See `ops/backup/README.md` (schedule, retention, 3-2-1-1-0), `ops/runbooks/resto
 | Monitoring and alerts | `https://<site>/grafana/` (office networks), runbooks in `ops/runbooks/alerts/` |
 | Monthly operations report | `ops/itgc/monthly-ops-report-template.md` |
 
-## 10. Mode C laptops
+## 10. Mode C: desktop edition on a single PC
 
-Distribute the signed offline build through device management; require full-disk encryption; register each
+Build `FS-Platform-Setup-<version>.exe` with `make windows-installer` (see `fsoffline/README.md`), sign it with the
+firm's code-signing certificate, record the release in the ITGC change log and distribute it through device
+management (or hand it to the client). Installation, first run, colleagues, backups, recovery, upgrade and uninstall
+are described for the PC's users in [user-guide/windows-install.md](user-guide/windows-install.md). Require
+full-disk encryption on every such PC. For laptops that exchange engagements with the firm server, register each
 laptop's package-signing key on the server (`fsoffline pubkey`) and trust the server's key on the laptop
-(`fsoffline trust <key>`). See `fsoffline/README.md`.
+(`fsoffline trust <key>`).

@@ -10,9 +10,15 @@
 export type PermissionMap = Record<string, Record<string, string>>;
 
 export interface MeLike {
-  user: { id: string; is_firm_user: boolean; email: string; name: string; mfa_enrolled_at?: string | null };
+  user: { id: string; is_firm_user: boolean; email: string; name: string; mfa_enrolled_at?: string | null; must_change_password?: boolean };
   permissions: PermissionMap;
   assignments: { role_code: string; client_id: string | null; client_name?: string | null }[];
+  must_change_password?: boolean;
+}
+
+/** Signed in with a one-time password: the server serves nothing else until it is changed. */
+export function mustChangePassword(me: MeLike | null | undefined): boolean {
+  return !!me && !!(me.must_change_password || me.user.must_change_password);
 }
 
 export function permissionValue(me: MeLike | null | undefined, permission: string, clientId?: string | null): string | null {
@@ -79,6 +85,7 @@ export interface AdminSection {
 // each section is gated by the permission its list endpoint checks (fsweb routers/admin.py, compliance.py)
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: "users", label: "Users", permissions: ["users.manage"] },
+  { key: "firm", label: "Firm settings", permissions: ["users.manage"] },
   { key: "roles", label: "Roles & permissions", permissions: ["users.manage"] },
   { key: "assignments", label: "Assignments", permissions: ["users.manage"] },
   { key: "elevations", label: "Just-in-time elevation", permissions: ["users.manage"] },

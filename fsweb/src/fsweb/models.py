@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -82,6 +83,8 @@ class User(Base):
     is_break_glass: Mapped[bool] = mapped_column(Boolean, default=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    # set with a one-time / generated password: the API refuses everything but sign-in, MFA and the change (migration 0002)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     mfa_type: Mapped[str] = mapped_column(String(16), default="none")  # none|totp
     totp_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     mfa_enrolled_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
@@ -820,7 +823,7 @@ class BackupLog(Base):
     kind: Mapped[str] = mapped_column(String(30))  # pg_full|pg_diff|wal|objects|config|restore_drill|key_recovery_drill
     started: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     finished: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
-    status: Mapped[str] = mapped_column(String(12), default="ok")  # ok|failed|running
+    status: Mapped[str] = mapped_column(String(20), default="ok")  # ok|failed|running|pending_approval|approved
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     location: Mapped[str] = mapped_column(String(300), default="")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)

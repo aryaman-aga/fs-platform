@@ -1,0 +1,154 @@
+# Windows desktop edition: the test suites on Windows, the installer built on macOS (as released) and then installed,
+# started and exercised end to end on a clean Windows runner. GitHub's Windows runners have no Microsoft Office, so the
+# Excel PDF engine is covered only by the fake-COM unit tests; check it on a PC with Excel before each release.
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Behave like a typical client PC (long paths not enabled)
+        shell: pwsh
+        run: Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "fscore[dev,ai,win]" -e "fsweb[dev]" -e fsoffline
+          pip install pytest pytest-xdist hypothesis
+      - name: Tests
+        run: >-
+          pytest -n auto -p no:cacheprovider -m "not slow and not private and not libreoffice and not postgres"
+          fscore/tests fsweb/tests fsoffline/tests tools/tests
+
+  installer:
+    name: build the installer (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: fsui/package-lock.json
+      - run: brew install nsis
+      - uses: actions/cache@v4
+        with:
+          path: build/windows/cache
+          key: windows-downloads-${{ hashFiles('fsoffline/packaging/build_windows.py') }}
+      - name: Build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e fscore -e fsweb -e "fsoffline[build]"
+          python fsoffline/packaging/build_windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fs-platform-windows-installer
+          path: dist/windows/
+          retention-days: 30
+
+  installer-test:
+    name: install and run on Windows
+    needs: installer
+    runs-on: windows-latest
+    env:
+      APP: C:\Program Files\FS-Platform
+      DATA: C:\ProgramData\FSPlatform
+    steps:
+      - uses: actions/checkout@v5
+      - name: Behave like a typical client PC (long paths not enabled)
+        shell: pwsh
+        run: Set-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: fs-platform-windows-installer
+          path: installer
+      - name: Install silently
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem installer\FS-Platform-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          Get-Content "$env:APP\fsplatform.ini"
+          if (-not (Test-Path "$env:APP\python\pythonw.exe")) { throw "no bundled Python" }
+          $soffice = (Select-String -Path "$env:APP\fsplatform.ini" -Pattern '^soffice=(.*)$').Matches[0].Groups[1].Value
+          if (-not (Test-Path $soffice)) { throw "bundled LibreOffice not found at $soffice" }
+      - name: The bundle imports everything it needs
+        shell: pwsh
+        run: |
+          & "$env:APP\python\python.exe" -X utf8 -c "import win32api, pythoncom, win32com.client, pypdfium2, pypdf, lxml.etree, cryptography, argon2, pydantic_core, sqlalchemy, uvicorn, fsweb.main, fscore.api, fsoffline.desktop, fsoffline.tray; from fscore.registry import load_all_checks; load_all_checks(); print('bundle ok')"
+          if ($LASTEXITCODE -ne 0) { throw "import check failed" }
+      - name: Start the installed app as its shortcut does (pythonw, no console)
+        shell: pwsh
+        run: Start-Process -FilePath "$env:APP\python\pythonw.exe" -ArgumentList '-X','utf8','-m','fsoffline','desktop','--no-browser' -WorkingDirectory "$env:APP"
+      - name: End-to-end smoke test against the installed copy
+        shell: pwsh
+        run: |
+          & "$env:APP\python\python.exe" -X utf8 fsoffline\packaging\smoke_test.py --data-dir "$env:DATA"
+          if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+      - name: Stop and start again
+        shell: pwsh
+        run: |
+          & "$env:APP\python\python.exe" -X utf8 -m fsoffline stop
+          if ($LASTEXITCODE -ne 0) { throw "stop failed" }
+          if (Test-Path "$env:DATA\runtime.json") { throw "runtime.json left behind after a stop" }
+          Start-Process -FilePath "$env:APP\python\python.exe" -ArgumentList '-X','utf8','-m','fsoffline','serve','--no-browser' -WorkingDirectory "$env:APP"
+          & "$env:APP\python\python.exe" -X utf8 fsoffline\packaging\smoke_test.py --data-dir "$env:DATA" --existing
+          if ($LASTEXITCODE -ne 0) { throw "data not there after a restart" }
+          & "$env:APP\python\python.exe" -X utf8 -m fsoffline status
+      - name: Upgrade in place while the app runs keeps the data
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem installer\FS-Platform-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "upgrade exited with $($p.ExitCode)" }
+          if (Get-Process | Where-Object { $_.Path -like "$env:APP\*" }) { throw "the upgrade did not stop the running app" }
+          Start-Process -FilePath "$env:APP\python\pythonw.exe" -ArgumentList '-X','utf8','-m','fsoffline','desktop','--no-browser' -WorkingDirectory "$env:APP"
+          & "$env:APP\python\python.exe" -X utf8 fsoffline\packaging\smoke_test.py --data-dir "$env:DATA" --existing
+          if ($LASTEXITCODE -ne 0) { throw "data not kept across the upgrade" }
+      - name: Uninstall keeps the data; uninstall with /DELETEDATA removes it
+        shell: pwsh
+        run: |
+          function Wait-Gone([string]$path) {
+            # the uninstaller copies itself to %TEMP% and runs from there: wait for its work, not for the first process
+            foreach ($i in 1..300) { if (-not (Test-Path $path)) { return }; Start-Sleep 1 }
+            throw "$path still present 5 minutes after the uninstaller started"
+          }
+          Start-Process -FilePath "$env:APP\Uninstall FS-Platform.exe" -ArgumentList '/S' -Wait | Out-Null
+          Wait-Gone "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FS-Platform"  # removed after the files
+          if (Test-Path "$env:APP\python") { throw "program files left behind" }
+          if (-not (Test-Path "$env:DATA\fsweb.sqlite3")) { throw "data removed although it should be kept" }
+          if (Get-Process | Where-Object { $_.Path -like "$env:APP\*" }) { throw "processes left running" }
+          $setup = (Get-ChildItem installer\FS-Platform-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "reinstall exited with $($p.ExitCode)" }
+          Start-Process -FilePath "$env:APP\Uninstall FS-Platform.exe" -ArgumentList '/S','/DELETEDATA' -Wait | Out-Null
+          Wait-Gone "$env:DATA"
+      - name: Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-platform-windows-logs
+          path: C:\ProgramData\FSPlatform\logs

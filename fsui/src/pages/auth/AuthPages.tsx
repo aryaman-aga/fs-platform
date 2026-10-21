@@ -1,15 +1,19 @@
-/** Sign-in, MFA verification / enrolment, password reset and invitation acceptance (05 §1). */
+/** Sign-in, MFA verification / enrolment, password reset, the forced change of a one-time password and invitation
+ * acceptance (05 §1). */
 import { useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, setCsrfToken } from "@/api/client";
-import { qk } from "@/api/hooks";
+import { qk, useAuthOptions } from "@/api/hooks";
 import type { AuthOkOut, LoginOut, MfaEnrollOut, OkOut, RecoveryCodesOut } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { Button, ErrorNotice, Notice, TextInput } from "@/components/ui";
+import { mustChangePassword } from "@/auth/permissions";
+import { Button, ErrorNotice, Notice, Spinner, TextInput } from "@/components/ui";
 import { AuthLayout } from "@/layout/AuthLayout";
+
+const PASSWORD_HINT = "At least 12 characters; common or breached passwords, and ones containing your name, are refused.";
 
 function useAfterLogin() {
   const qc = useQueryClient();
@@ -25,6 +29,7 @@ function useAfterLogin() {
 
 export function LoginPage() {
   const { status, notice, setNotice, me } = useAuth();
+  const options = useAuthOptions();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,7 +71,7 @@ export function LoginPage() {
       </form>
       <div className="row between small">
         <Link to="/forgot-password">Forgot password?</Link>
-        <a href="/api/v1/auth/oidc/login">Firm single sign-on</a>
+        {options.data?.sso ? <a href="/api/v1/auth/oidc/login">Firm single sign-on</a> : null}
       </div>
       <p className="small faint">Multi-factor authentication is required for every account. Activity is recorded in the audit trail.</p>
     </AuthLayout>
@@ -233,10 +238,33 @@ export function MfaEnrollPage() {
 }
 
 export function ForgotPasswordPage() {
+  const options = useAuthOptions();
   const [email, setEmail] = useState("");
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  if (options.isLoading) {
+    return (
+      <AuthLayout title="Reset your password">
+        <Spinner />
+      </AuthLayout>
+    );
+  }
+  if (options.data && !options.data.self_service_reset) {
+    // no e-mail (desktop edition, or no mail server): an administrator issues a reset link instead
+    return (
+      <AuthLayout title="Reset your password">
+        <Notice>Ask your administrator to reset your password.</Notice>
+        <p className="small muted">
+          A Firm Admin creates a one-time reset link under Administration → Users → Reset password and gives it to you
+          {options.data.edition === "desktop" ? "; it opens on this PC." : "."} If you also lost your authenticator app, ask them to reset MFA too.
+        </p>
+        <Link to="/login" className="small">
+          Back to sign in
+        </Link>
+      </AuthLayout>
+    );
+  }
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -271,6 +299,7 @@ export function ForgotPasswordPage() {
 }
 
 function PasswordForm({ endpoint, title, submitLabel }: { endpoint: string; title: string; submitLabel: string }) {
+  const { me, endSession } = useAuth();
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const [password, setPassword] = useState("");
@@ -286,6 +315,8 @@ function PasswordForm({ endpoint, title, submitLabel }: { endpoint: string; titl
     setError(null);
     try {
       const out = await api<OkOut>(endpoint, { method: "POST", body: { token, password }, quiet401: true });
+      // A shared PC: whoever handed over the link may still be signed in here; the new password's owner signs in next.
+      if (me) await endSession();
       setDone(out.message);
     } catch (err) {
       setError(err);
@@ -295,7 +326,12 @@ function PasswordForm({ endpoint, title, submitLabel }: { endpoint: string; titl
   };
   return (
     <AuthLayout title={title}>
-      {!token ? <Notice tone="error">This link is incomplete. Open the link from your e-mail again.</Notice> : null}
+      {!token ? <Notice tone="error">This link is incomplete. Open the whole link you were given again.</Notice> : null}
+      {me && !done ? (
+        <Notice tone="warn">
+          {me.user.email} is signed in on this browser. Setting the password signs them out, so that the account the link is for can sign in.
+        </Notice>
+      ) : null}
       {done ? (
         <>
           <Notice tone="ok">{done}</Notice>
@@ -303,7 +339,7 @@ function PasswordForm({ endpoint, title, submitLabel }: { endpoint: string; titl
         </>
       ) : (
         <form className="stack" onSubmit={(e) => void submit(e)}>
-          <TextInput label="New password" type="password" autoComplete="new-password" required minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} hint="At least 12 characters; common or breached passwords are refused." />
+          <TextInput label="New password" type="password" autoComplete="new-password" required minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} hint={PASSWORD_HINT} />
           <TextInput label="Repeat password" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} error={mismatch ? "The passwords differ." : undefined} />
           <ErrorNotice error={error} />
           <Button type="submit" variant="primary" busy={busy} disabled={!token || mismatch || password.length < 12}>
@@ -321,4 +357,60 @@ export function ResetPasswordPage() {
 
 export function AcceptInvitePage() {
   return <PasswordForm endpoint="/auth/invite/accept" title="Welcome to FS-Platform" submitLabel="Set password" />;
+}
+
+/** Signed in with a one-time password (printed by the CLI, or generated): the server serves nothing else until the
+ * user chooses their own password, so every screen leads here. */
+export function ChangePasswordPage() {
+  const { status, me, refresh, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [current, setCurrent] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  if (status === "loading") {
+    return (
+      <div className="auth-wrap">
+        <Spinner />
+      </div>
+    );
+  }
+  if (status === "anonymous" || !me) return <Navigate to="/login" replace />;
+  if (status === "mfa") return <Navigate to={me.user.mfa_enrolled_at ? "/mfa" : "/mfa/enroll"} replace />;
+  if (!mustChangePassword(me)) return <Navigate to="/" replace />;
+
+  const mismatch = confirm.length > 0 && confirm !== password;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (mismatch || password.length < 12 || !current) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api<OkOut>("/auth/password/change", { method: "POST", body: { current_password: current, new_password: password } });
+      await refresh();
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <AuthLayout title="Choose your own password" tag={`Signed in as ${me.user.email}`}>
+      <Notice tone="warn">You signed in with a one-time password. Choose your own password before you continue.</Notice>
+      <form className="stack" onSubmit={(e) => void submit(e)} aria-label="Change password">
+        <TextInput label="One-time password" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <TextInput label="New password" type="password" autoComplete="new-password" required minLength={12} value={password} onChange={(e) => setPassword(e.target.value)} hint={PASSWORD_HINT} />
+        <TextInput label="Repeat new password" type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} error={mismatch ? "The passwords differ." : undefined} />
+        <ErrorNotice error={error} title="Not changed" />
+        <Button type="submit" variant="primary" busy={busy} disabled={!current || mismatch || password.length < 12}>
+          Change password
+        </Button>
+      </form>
+      <Button variant="ghost" onClick={() => void signOut()}>
+        Sign out
+      </Button>
+    </AuthLayout>
+  );
 }

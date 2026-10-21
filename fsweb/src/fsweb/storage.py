@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,10 +54,40 @@ class Storage(Protocol):
     def health(self) -> bool: ...
 
 
+# Names Windows reserves for devices (in any case, with or without an extension) and characters it cannot store in a
+# file name; a ":" would also address a hidden NTFS alternate data stream.
+_WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$", re.I)
+_WIN_INVALID = re.compile(r'[<>:"|?*\x00-\x1f]')
+
+
 def _check_key(key: str) -> str:
     if not key or key.startswith("/") or ".." in key.split("/") or "\\" in key:
         raise StorageError(f"invalid object key: {key!r}")
+    for seg in key.split("/"):
+        if not seg or _WIN_INVALID.search(seg) or _WIN_RESERVED.match(seg) or seg[-1] in ". ":
+            raise StorageError(f"invalid object key: {key!r}")
     return key
+
+
+def safe_segment(name: str) -> str:
+    """A key segment that is a valid file name on every platform (uploads keep their name in the version record)."""
+    out = _WIN_INVALID.sub("_", name.replace("/", "_").replace("\\", "_")).rstrip(". ") or "_"
+    return f"_{out}" if _WIN_RESERVED.match(out) else out
+
+
+# On Windows a descriptor from os.open is in text mode unless O_BINARY is set: every \n byte written would become \r\n.
+O_BINARY = getattr(os, "O_BINARY", 0)
+
+
+def native_path(p: Path) -> Path:
+    """Windows: the extended-length form of an absolute path, so deep object keys (three UUIDs, a run id and a file
+    name) are not cut off at the 260-character MAX_PATH limit. Other platforms: unchanged."""
+    if os.name != "nt":
+        return p
+    s = str(p)
+    if s.startswith("\\\\?\\"):
+        return p
+    return Path("\\\\?\\UNC\\" + s[2:]) if s.startswith("\\\\") else Path("\\\\?\\" + s)
 
 
 class LocalStorage:
@@ -68,19 +99,22 @@ class LocalStorage:
         (self.root / ".worm").mkdir(exist_ok=True)
 
     def _path(self, key: str) -> Path:
-        p = (self.root / _check_key(key)).resolve()
+        key = _check_key(key)
+        if os.name == "nt":  # the key is already checked segment by segment: no resolve() of a possibly over-long path
+            return native_path(self.root.joinpath(*key.split("/")))
+        p = (self.root / key).resolve()
         if self.root not in p.parents:
             raise StorageError("key escapes the storage root")
         return p
 
     def _worm_meta(self, key: str) -> Path:
-        return self.root / ".worm" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+        return native_path(self.root / ".worm" / (hashlib.sha256(key.encode()).hexdigest() + ".json"))
 
     def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> StoredObject:
         p = self._path(key)
         p.parent.mkdir(parents=True, exist_ok=True)
         try:
-            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | O_BINARY, 0o600)
         except FileExistsError as exc:
             raise StorageError(f"object {key} already exists (versions are immutable)") from exc
         with os.fdopen(fd, "wb") as fh:
@@ -268,5 +302,5 @@ def make_storage(spec: str, *, endpoint: str | None = None, access_key: str | No
 
 
 def object_key(tenant_id: str, client_id: str, engagement_id: str, *parts: str) -> str:
-    safe = [p.replace("/", "_").replace("\\", "_") for p in parts]
+    safe = [safe_segment(p) for p in parts]
     return "/".join(["t", tenant_id, "c", client_id, "e", engagement_id, *safe])

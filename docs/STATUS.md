@@ -70,7 +70,18 @@ within six months, T3 when scaling.
 - Operations: Docker Compose, Helm chart, Caddy, backups (pgBackRest + restic) and scripted restore drill,
   Prometheus alerts each linked to a runbook, scheduled compliance jobs (CERT-In deadline reminders every 15
   minutes, quarterly access-review campaign, daily auto-revoke), Shamir 2-of-3 key escrow tool, Windows render
-  service, offline (Mode C) launcher, CI workflow with SAST / SCA / secret scanning / SBOM.
+  service, CI workflow with SAST / SCA / secret scanning / SBOM.
+- **Windows desktop edition** (`fsoffline`): one installer (`make windows-installer`, NSIS) bundling the
+  embeddable CPython, hash-pinned win_amd64 wheels, the UI, the VC++ runtime and LibreOffice (administrative image);
+  tray app (pywin32) serving 127.0.0.1 only, one server per PC across Windows accounts, data in
+  `C:\ProgramData\FSPlatform` limited to an *FS-Platform Users* group, SQLite upgraded in place by Alembic
+  (transactional, backup first, newer databases refused), first-run setup authorised by a one-time token, invite and
+  password-reset links shown on screen, forced change of temporary passwords, daily backups (14 kept, files mirrored
+  incrementally, optional second folder), a Recovery tool (reset administrator password / MFA, allow a Windows
+  account, restore, diagnostics). Windows fixes found on the way: binary-safe `os.open`, `fsync` on Windows,
+  extended-length object paths and Windows-safe keys, registry-proof MIME types, Excel-absent fallback to
+  LibreOffice. PyMuPDF (AGPL) replaced by pypdfium2 + pypdf so the bundle is permissively licensed.
+  CI: tests on Windows, installer built on macOS and exercised end to end on a clean Windows runner.
 - Control evidence: [CONTROL_MATRIX.md](CONTROL_MATRIX.md) links every engagement control and IT general control
   to its framework mapping, the code that enforces it and the tests that prove it; every link is verified by
   `python tools/traceability.py --check` (and a test).
@@ -81,7 +92,10 @@ within six months, T3 when scaling.
 - **Container builds and IaC**: Dockerfiles, Compose, Helm and Terraform are validated statically only
   (no Docker, Helm or Terraform available here).
 - **Redis rate limiter, ClamAV, Vault KMS**: written; their servers were not available for tests.
-- **Excel COM rendering** runs only on Windows with licensed Excel; tested with a fake COM object.
+- **Excel COM rendering** runs only on Windows with licensed Excel; tested with a fake COM object (CI runners have
+  no Office). Check one final PDF through Excel on a client-like PC before each desktop release.
+- **Desktop tray icon and Windows sign-out handling** need an interactive Windows desktop; CI runs the installed app
+  headless (`fsoffline serve`). The installer is not code-signed yet (SmartScreen warns once).
 - **Load / soak tests** (E-OPS-05) beyond the single-workbook performance test; **penetration test**; DR,
   key-recovery and incident-response **drills** — procedures and runbooks exist, the drills themselves
   are organisational go-live activities.

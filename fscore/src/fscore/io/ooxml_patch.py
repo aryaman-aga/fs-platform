@@ -451,7 +451,7 @@ class XlsxPatcher:
             errors = validate_package(tmp, only=touched)
             if errors:
                 raise PatchError("XML validation failed: " + "; ".join(errors[:5]))
-            with tmp.open("rb") as fh:
+            with tmp.open("r+b") as fh:  # Windows only flushes through a writable handle (EBADF otherwise)
                 os.fsync(fh.fileno())
             os.replace(tmp, dest)
         finally:

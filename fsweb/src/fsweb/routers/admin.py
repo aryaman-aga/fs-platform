@@ -27,18 +27,23 @@ from fsweb.models import (
     Elevation,
     Invite,
     Policy,
-    RecoveryCode,
     Role,
     RolePermission,
+    Tenant,
     User,
     UserClientRole,
 )
 from fsweb.security import sessions
 from fsweb.security.crypto import hash_token, new_token
+from fsweb.services import accounts
 from fsweb.services.common import notify
-from fsweb.services.seed import assign
+from fsweb.services.seed import WORKS_ON_ENGAGEMENTS, assign, tenant_settings, update_tenant_settings
 
 router = APIRouter(tags=["admin"])
+
+
+def _admin_actor(p: Principal, reason: str) -> accounts.AdminActor:
+    return accounts.with_reason(p.actor(), reason)
 
 
 def _role(db: Session, tenant_id: str, code: str) -> Role:
@@ -76,11 +81,15 @@ def invite_user(body: schemas.InviteIn, request: Request, p: Principal = Depends
     inv = Invite(tenant_id=p.tenant_id, user_id=u.id, token_hash=hash_token(token), expires_at=utcnow() + timedelta(hours=st.settings.invite_hours), created_by=p.user_id)
     db.add(inv)
     link = f"{st.settings.public_base_url}/invite?token={token}"
-    notify(db, p.tenant_id, u.email, "You are invited to FS-Platform", f"Set your password within {st.settings.invite_hours} hours: {link}", "invite")
+    by_email = accounts.email_delivery(st.settings)
+    if st.settings.env != "offline":  # the desktop edition has no e-mail: the link is handed over in person
+        notify(db, p.tenant_id, u.email, "You are invited to FS-Platform", f"Set your password within {st.settings.invite_hours} hours: {link}", "invite")
     audit.append(db, p.actor(), "user.invited", client_id=body.client_id, object_type="user", object_id=u.id,
-                 details={"role": body.role_code, "firm_user": body.is_firm_user})
+                 details={"role": body.role_code, "firm_user": body.is_firm_user, "delivery": "email" if by_email else "link"})
     db.commit()
-    return schemas.InviteOut(user=schemas.UserOut.model_validate(u), invite_link=None if st.settings.production_like else link, expires_at=inv.expires_at)
+    # The administrator sees the link when no e-mail will deliver it (desktop edition, no SMTP), and outside production.
+    show = not by_email or not st.settings.production_like
+    return schemas.InviteOut(user=schemas.UserOut.model_validate(u), invite_link=link if show else None, expires_at=inv.expires_at)
 
 
 @router.get("/admin/users/{user_id}", response_model=schemas.UserOut)
@@ -149,16 +158,52 @@ def mfa_reset(user_id: str, request: Request, p: Principal = Depends(require_pri
     u = db.get(User, user_id)
     if u is None or u.tenant_id != p.tenant_id:
         raise not_found("user")
-    u.totp_secret_enc = None
-    u.mfa_type = "none"
-    u.mfa_enrolled_at = None
-    u.last_totp_step = None
-    for rc in db.execute(select(RecoveryCode).where(RecoveryCode.user_id == u.id)).scalars():
-        db.delete(rc)
-    n = sessions.revoke_all(db, u.id)
-    audit.append(db, p.actor(), "user.mfa_reset", object_type="user", object_id=u.id, details={"reason": reason, "sessions_revoked": n})
+    accounts.reset_mfa(db, u, _admin_actor(p, reason))
     db.commit()
     return schemas.OkOut(message="MFA reset; the user enrols a new authenticator at next sign-in")
+
+
+@router.post("/admin/users/{user_id}/password-reset-link", response_model=schemas.PasswordResetLinkOut)
+def password_reset_link(user_id: str, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.PasswordResetLinkOut:
+    """A reset link to hand over in person (no e-mail on the desktop edition). Step-up and a reason, like the MFA reset;
+    the user chooses the new password on the reset page, which signs out their sessions."""
+    st = get_state(request)
+    authorize(request, db, p, "users.manage")
+    reason = require_stepup(request, p)
+    u = db.get(User, user_id)
+    if u is None or u.tenant_id != p.tenant_id:
+        raise not_found("user")
+    if u.status == "disabled":
+        raise conflict("user_disabled", "the account is disabled; enable it before resetting the password")
+    link, expires_at = accounts.issue_password_reset_link(db, st.settings, u, _admin_actor(p, reason))
+    db.commit()
+    return schemas.PasswordResetLinkOut(link=link, expires_at=expires_at)
+
+
+# ------------------------------------------------------------------ firm (tenant) settings
+
+
+@router.get("/admin/tenant-settings", response_model=schemas.TenantSettingsOut)
+def get_tenant_settings(request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.TenantSettingsOut:
+    authorize(request, db, p, "users.manage")
+    settings = tenant_settings(db.get(Tenant, p.tenant_id))
+    return schemas.TenantSettingsOut(works_on_engagements=bool(settings.get(WORKS_ON_ENGAGEMENTS, False)))
+
+
+@router.put("/admin/tenant-settings", response_model=schemas.TenantSettingsOut)
+def put_tenant_settings(body: schemas.TenantSettingsIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.TenantSettingsOut:
+    """``works_on_engagements``: a Firm Admin who creates a client is also made its Partner. That weakens segregation of
+    duties, so changing it needs step-up and a reason; each such assignment is audited and flagged in access reviews."""
+    authorize(request, db, p, "users.manage")
+    reason = require_stepup(request, p)
+    t = db.get(Tenant, p.tenant_id)
+    if t is None:
+        raise not_found("firm")
+    before, after = update_tenant_settings(t, {WORKS_ON_ENGAGEMENTS: body.works_on_engagements})
+    audit.append(db, p.actor(), "tenant.settings_changed", object_type="tenant", object_id=t.id, before=before, after=after,
+                 details={"reason": reason, WORKS_ON_ENGAGEMENTS: body.works_on_engagements})
+    db.commit()
+    return schemas.TenantSettingsOut(works_on_engagements=body.works_on_engagements)
 
 
 # ------------------------------------------------------------------ roles & matrix

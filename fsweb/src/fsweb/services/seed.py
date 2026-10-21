@@ -1,4 +1,4 @@
-"""Tenant bootstrap: roles, permission matrix, policies, checklist template, first admin."""
+"""Tenant bootstrap: roles, permission matrix, policies, checklist template, first admin, tenant settings."""
 
 from __future__ import annotations
 
@@ -65,6 +65,36 @@ class BootstrapResult:
     users: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class FirstRunResult:
+    tenant: Tenant
+    admin: User
+    assignment: UserClientRole
+
+
+# Tenant settings (``tenant.settings_json``).
+DEFAULT_TENANT_SETTINGS: dict[str, Any] = {"firm_admin_may_approve_ai": True, "ai_enabled": False}
+# A Firm Admin who creates a client is also made its Partner (small offices where the administrator prepares statements).
+WORKS_ON_ENGAGEMENTS = "works_on_engagements"
+# Desktop edition: the launcher copies every backup into this folder as well (an absolute path).
+BACKUP_COPY_DIR = "backup_copy_dir"
+
+
+def tenant_settings(tenant: Tenant | None) -> dict[str, Any]:
+    return dict(tenant.settings_json or {}) if tenant is not None else {}
+
+
+def update_tenant_settings(tenant: Tenant, changes: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply ``changes`` (``None`` removes a key); returns (before, after). A new dict, so the JSON change is tracked."""
+    before = tenant_settings(tenant)
+    after = {**before, **changes}
+    for k, v in changes.items():
+        if v is None:
+            after.pop(k, None)
+    tenant.settings_json = after
+    return before, after
+
+
 def ensure_permissions(db: Session) -> None:
     existing = {p for (p,) in db.execute(select(Permission.code)).all()}
     for label, code, _ in ALL_PERMISSIONS:
@@ -102,7 +132,7 @@ def seed_policies(db: Session, tenant_id: str) -> None:
 
 
 def create_tenant(db: Session, name: str, *, settings: dict[str, Any] | None = None) -> Tenant:
-    t = Tenant(name=name, settings_json=settings or {"firm_admin_may_approve_ai": True, "ai_enabled": False})
+    t = Tenant(name=name, settings_json=settings or dict(DEFAULT_TENANT_SETTINGS))
     db.add(t)
     db.flush()
     audit.ensure_head(db, t.id)
@@ -130,7 +160,10 @@ def make_user(
     totp_secret: str | None = None,
     status: str = "active",
     created_by: str | None = None,
+    must_change_password: bool = False,
 ) -> User:
+    """``must_change_password``: the password is one-time / generated (shown to an administrator or printed), so the
+    user must replace it before the API serves anything else."""
     u = User(
         tenant_id=tenant_id,
         email=email.strip().lower(),
@@ -139,6 +172,7 @@ def make_user(
         is_firm_user=is_firm_user,
         password_hash=passwords.hash_password(password) if password else None,
         password_changed_at=utcnow() if password else None,
+        must_change_password=bool(password) and must_change_password,
         created_by=created_by,
     )
     if totp_secret:
@@ -171,8 +205,22 @@ def bootstrap(db: Session, cipher: FieldCipher, tenant_name: str, admin_email: s
     roles = {r.code: r for r in db.execute(select(Role).where(Role.tenant_id == t.id)).scalars()}
     pw = one_time_password()
     secret = totp.new_secret()
-    u = make_user(db, cipher, t.id, admin_email, admin_name, password=pw, totp_secret=secret, created_by="bootstrap")
+    u = make_user(db, cipher, t.id, admin_email, admin_name, password=pw, totp_secret=secret, created_by="bootstrap",
+                  must_change_password=True)
     assign(db, t.id, u, roles["firm_admin"], None, "bootstrap")
     audit.append(db, audit.Actor(t.id, None, "bootstrap"), "tenant.bootstrapped", object_type="tenant", object_id=t.id,
                  details={"admin_user_id": u.id})
     return BootstrapResult(t.id, u.id, u.email, pw, secret)
+
+
+def first_run(db: Session, cipher: FieldCipher, *, firm_name: str, admin_email: str, admin_name: str, password: str,
+              works_on_engagements: bool) -> FirstRunResult:
+    """First run from the browser (desktop edition): the firm with its roles, permission matrix, policies and audit
+    head, and a Firm Admin with the password they chose. No authenticator is pre-enrolled and nothing is printed: the
+    first sign-in enrols one with a QR code and issues the recovery codes. The caller checks the password policy,
+    holds the setup lock and writes the audit events."""
+    t = create_tenant(db, firm_name, settings={**DEFAULT_TENANT_SETTINGS, WORKS_ON_ENGAGEMENTS: bool(works_on_engagements)})
+    roles = {r.code: r for r in db.execute(select(Role).where(Role.tenant_id == t.id)).scalars()}
+    u = make_user(db, cipher, t.id, admin_email, admin_name, password=password, created_by="setup")
+    a = assign(db, t.id, u, roles["firm_admin"], None, "setup")
+    return FirstRunResult(t, u, a)

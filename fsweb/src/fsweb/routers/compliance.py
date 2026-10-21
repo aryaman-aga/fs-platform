@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -13,12 +14,23 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from fsweb import __version__, audit, schemas
-from fsweb.authz.deps import Principal, authorize, deny, get_db, get_state, require_principal, require_stepup
+from fsweb.authz.deps import (
+    Principal,
+    authorize,
+    deny,
+    get_db,
+    get_state,
+    permission_value,
+    require_principal,
+    require_stepup,
+)
+from fsweb.authz.permissions import DENY
 from fsweb.db import RLSContext, utcnow
 from fsweb.errors import bad_request, conflict, forbidden, not_found
 from fsweb.jobs.queue import queue_depth
 from fsweb.models import (
     AccessReview,
+    AuditEvent,
     AuditHead,
     BackupLog,
     BillingUsage,
@@ -27,12 +39,23 @@ from fsweb.models import (
     Incident,
     Release,
     RenderWorker,
+    Role,
     Run,
+    Tenant,
     User,
 )
 from fsweb.services import compliance
+from fsweb.services.accounts import AUTO_PARTNER_EVENT
+from fsweb.services.common import users_with_role
+from fsweb.services.seed import BACKUP_COPY_DIR, tenant_settings, update_tenant_settings
 
 router = APIRouter(tags=["compliance & operations"])
+
+# Backup kinds that count as "the last backup" on the health screen (desktop: the desktop edition's launcher).
+BACKUP_KINDS = ["pg_full", "pg_diff", "objects", "desktop"]
+AUTO_PARTNER_WARNING = ("Firm Admin made Partner automatically when creating this client (the firm's administrators also work on "
+                        "engagements): segregation of duties is weakened, so certify it consciously")
+ADMIN_ALSO_ON_CLIENT_WARNING = "This Firm Admin also holds a role on this client: segregation of duties is weakened"
 
 
 # ------------------------------------------------------------------ access reviews
@@ -46,8 +69,33 @@ def start_review(body: schemas.AccessReviewCampaignIn, request: Request, p: Prin
     return schemas.OkOut(message=f"{n} assignment(s) to certify" if n else "campaign already exists")
 
 
+def sod_warnings(db: Session, tenant_id: str, items: list[AccessReview]) -> dict[str, str]:
+    """Review items whose assignment weakens segregation of duties: a Firm Admin auto-assigned Partner on a client they
+    created (its own audit event), or any Firm Admin who also holds a role on a client."""
+    client_items = [i for i in items if i.client_id]
+    if not client_items:
+        return {}
+    auto = set(db.execute(select(AuditEvent.object_id).where(
+        AuditEvent.tenant_id == tenant_id, AuditEvent.action == AUTO_PARTNER_EVENT,
+        AuditEvent.object_id.in_([i.assignment_id for i in client_items]))).scalars())
+    admins = {u.id for u in users_with_role(db, tenant_id, "firm_admin")}
+    out: dict[str, str] = {}
+    for i in client_items:
+        if i.assignment_id in auto:
+            out[i.id] = AUTO_PARTNER_WARNING
+        elif i.user_id in admins:
+            out[i.id] = ADMIN_ALSO_ON_CLIENT_WARNING
+    return out
+
+
+def review_out(item: AccessReview, warning: str | None = None) -> schemas.AccessReviewOut:
+    out = schemas.AccessReviewOut.model_validate(item)
+    out.sod_warning = warning
+    return out
+
+
 @router.get("/admin/access-reviews", response_model=list[schemas.AccessReviewOut])
-def list_reviews(request: Request, period: str | None = None, mine: bool = False, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> list[AccessReview]:
+def list_reviews(request: Request, period: str | None = None, mine: bool = False, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> list[schemas.AccessReviewOut]:
     stmt = select(AccessReview).where(AccessReview.tenant_id == p.tenant_id).order_by(AccessReview.due_at)
     if mine or not p.is_firm_admin:
         stmt = stmt.where(AccessReview.reviewer_id == p.user_id)
@@ -55,7 +103,9 @@ def list_reviews(request: Request, period: str | None = None, mine: bool = False
         authorize(request, db, p, "admin.compliance")
     if period:
         stmt = stmt.where(AccessReview.period == period)
-    return list(db.execute(stmt).scalars())
+    items = list(db.execute(stmt).scalars())
+    warnings = sod_warnings(db, p.tenant_id, items)
+    return [review_out(i, warnings.get(i.id)) for i in items]
 
 
 def _still_reviews(p: Principal, item: AccessReview) -> bool:
@@ -67,7 +117,7 @@ def _still_reviews(p: Principal, item: AccessReview) -> bool:
 
 
 @router.post("/admin/access-reviews/{item_id}/decide", response_model=schemas.AccessReviewOut)
-def decide(item_id: str, body: schemas.AccessDecisionIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> AccessReview:
+def decide(item_id: str, body: schemas.AccessDecisionIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.AccessReviewOut:
     item = db.get(AccessReview, item_id)
     if item is None or item.tenant_id != p.tenant_id:
         raise not_found("access review item")
@@ -77,9 +127,10 @@ def decide(item_id: str, body: schemas.AccessDecisionIn, request: Request, p: Pr
         raise forbidden("you cannot certify your own access", "segregation_of_duties")
     if item.decision != "pending":
         raise conflict("decided", "item already decided")
+    warning = sod_warnings(db, p.tenant_id, [item]).get(item.id)
     compliance.decide_access(db, item, body.decision, p.actor())
     db.commit()
-    return item
+    return review_out(item, warning)
 
 
 @router.post("/admin/access-reviews/auto-revoke", response_model=schemas.OkOut)
@@ -93,7 +144,22 @@ def run_auto_revoke(request: Request, p: Principal = Depends(require_principal),
 @router.get("/admin/access-reviews/report", response_model=dict[str, Any])
 def review_report(request: Request, period: str | None = None, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> dict[str, Any]:
     authorize(request, db, p, "admin.compliance")
-    return compliance.access_report(db, p.tenant_id, period)
+    report = compliance.access_report(db, p.tenant_id, period)
+    stmt = select(AccessReview).where(AccessReview.tenant_id == p.tenant_id)
+    if period:
+        stmt = stmt.where(AccessReview.period == period)
+    items = list(db.execute(stmt).scalars())
+    warnings = sod_warnings(db, p.tenant_id, items)
+    if warnings:
+        emails = {u.id: u.email for u in db.execute(select(User).where(User.tenant_id == p.tenant_id)).scalars()}
+        roles = {r.id: r.code for r in db.execute(select(Role).where(Role.tenant_id == p.tenant_id)).scalars()}
+        clients = {c.id: c.name for c in db.execute(select(Client).where(Client.tenant_id == p.tenant_id)).scalars()}
+        report["sod_warnings"] = [{"period": i.period, "user": emails.get(i.user_id, i.user_id), "role": roles.get(i.role_id, i.role_id),
+                                   "client": clients.get(i.client_id or "", i.client_id), "decision": i.decision, "warning": warnings[i.id]}
+                                  for i in items if i.id in warnings]
+    else:
+        report["sod_warnings"] = []
+    return report
 
 
 # ------------------------------------------------------------------ DPDP requests
@@ -265,6 +331,58 @@ def approve_restore(backup_id: str, request: Request, p: Principal = Depends(req
     return b
 
 
+def _authorize_backup_settings(request: Request, db: Session, p: Principal) -> None:
+    """Operations (System Admin, Firm Admin) or compliance administration may see and set the backup copy folder."""
+    for permission in ("ops.manage", "admin.compliance"):
+        if permission_value(db, p, permission, None) != DENY:
+            authorize(request, db, p, permission)
+            return
+    authorize(request, db, p, "ops.manage")  # denied: recorded in the audit trail
+
+
+def _backup_settings_out(request: Request, folder: str | None) -> schemas.BackupSettingsOut:
+    # whether the folder is there right now (an unplugged USB drive …); not probed on the firm server
+    exists = None if folder is None or get_state(request).settings.env == "prod" else Path(folder).is_dir()
+    return schemas.BackupSettingsOut(backup_copy_dir=folder, exists=exists)
+
+
+def _backup_copy_dir(value: str | None) -> str | None:
+    folder = (value or "").strip()
+    if not folder:
+        return None
+    if any(ord(ch) < 32 for ch in folder):
+        raise bad_request("invalid_path", "the folder path contains control characters")
+    path = Path(folder)
+    if not path.is_absolute():
+        raise bad_request("invalid_path", "give the full path of the folder, starting with the drive (for example D:\\FS-Platform backups)")
+    if ".." in path.parts:
+        raise bad_request("invalid_path", "the folder path must not contain '..'")
+    return str(path)
+
+
+@router.get("/admin/backup-settings", response_model=schemas.BackupSettingsOut)
+def get_backup_settings(request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.BackupSettingsOut:
+    _authorize_backup_settings(request, db, p)
+    folder = tenant_settings(db.get(Tenant, p.tenant_id)).get(BACKUP_COPY_DIR)
+    return _backup_settings_out(request, str(folder) if folder else None)
+
+
+@router.put("/admin/backup-settings", response_model=schemas.BackupSettingsOut)
+def put_backup_settings(body: schemas.BackupSettingsIn, request: Request, p: Principal = Depends(require_principal), db: Session = Depends(get_db)) -> schemas.BackupSettingsOut:
+    """Desktop edition: the launcher copies every backup into this folder too (another drive, a USB disk, a share)."""
+    _authorize_backup_settings(request, db, p)
+    reason = require_stepup(request, p)
+    folder = _backup_copy_dir(body.backup_copy_dir)
+    t = db.get(Tenant, p.tenant_id)
+    if t is None:
+        raise not_found("firm")
+    before, after = update_tenant_settings(t, {BACKUP_COPY_DIR: folder})
+    audit.append(db, p.actor(), "backup.settings_changed", object_type="tenant", object_id=t.id,
+                 details={"reason": reason, "before": before.get(BACKUP_COPY_DIR), "after": after.get(BACKUP_COPY_DIR)})
+    db.commit()
+    return _backup_settings_out(request, folder)
+
+
 # ------------------------------------------------------------------ ITGC releases
 
 
@@ -353,7 +471,7 @@ def health(request: Request, p: Principal = Depends(require_principal), db: Sess
                     "fresh": w.last_heartbeat_at > utcnow() - timedelta(minutes=2)} for w in s.execute(select(RenderWorker)).scalars()]
         depth = queue_depth(s)
         running = int(s.execute(select(func.count()).select_from(Run).where(Run.tenant_id == p.tenant_id, Run.status == "running")).scalar_one())
-    last_backup = db.execute(select(BackupLog).where(BackupLog.tenant_id == p.tenant_id, BackupLog.kind.in_(["pg_full", "pg_diff", "objects"]))
+    last_backup = db.execute(select(BackupLog).where(BackupLog.tenant_id == p.tenant_id, BackupLog.kind.in_(BACKUP_KINDS))
                              .order_by(BackupLog.started.desc())).scalars().first()
     last_drill = db.execute(select(BackupLog).where(BackupLog.tenant_id == p.tenant_id, BackupLog.kind == "restore_drill")
                             .order_by(BackupLog.started.desc())).scalars().first()

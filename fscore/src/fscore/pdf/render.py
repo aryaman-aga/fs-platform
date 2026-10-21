@@ -3,9 +3,10 @@ draft overlay, bookmarks and the mandatory post-conversion verification.
 
 Engines (all local, never online): ``excel`` (COM, Windows) → ``libreoffice``
 (headless) → ``native`` (built-in ReportLab renderer). ``auto`` picks the first
-available. A *final* PDF needs zero High findings (signatory checks included)
-and, by default, an Excel or LibreOffice render; it is deleted again if the
-verification finds any miss (control C7).
+available and falls back to the next one when an engine fails to run (Excel not
+installed or not startable, a LibreOffice crash). A *final* PDF needs zero High
+findings (signatory checks included) and, by default, an Excel or LibreOffice
+render; it is deleted again if the verification finds any miss (control C7).
 """
 
 from __future__ import annotations
@@ -69,6 +70,18 @@ def resolve_engine(requested: str, mode: str, config: EngagementConfig) -> tuple
             "install LibreOffice or allow native finals by policy"
         )
     return chosen, note
+
+
+def fallback_engines(chosen: str, requested: str, mode: str, config: EngagementConfig) -> list[str]:
+    """Engines ``auto`` falls back to, in order, when ``chosen`` fails (an explicit engine never falls back)."""
+    if (requested or "auto").lower() != "auto" or chosen not in ENGINES:
+        return []
+    avail = available_engines()
+    later = ENGINES[ENGINES.index(chosen) + 1 :]
+    return [e for e in later if avail[e] and (e != "native" or mode != "final" or allow_native_final(config))]
+
+
+_ENGINE_LABEL = {"excel": "Excel", "libreoffice": "LibreOffice", "native": "the built-in renderer"}
 
 
 def final_gate(check_result: CheckResult | None) -> str | None:
@@ -246,21 +259,31 @@ def render(
     tmp_dir = Path(tempfile.mkdtemp(prefix="fs-render-", dir=str(dest.parent)))
     tmp_pdf = tmp_dir / f"render-{uuid.uuid4().hex[:8]}.pdf"
     draft = mode == "draft"
+    failures: list[str] = []
     try:
-        bookmarks: list[tuple[int, str, int]] | None = None
-        if chosen == "native":
-            res = render_native.render_native(Path(path), tmp_pdf, sheets, draft=draft, run_id=run_id, title=Path(path).stem)
-            meta: dict[str, object] = {"engine": "native", "engine_version": render_native.ENGINE_VERSION, "pages": res.pages}
-            bookmarks = res.bookmarks
-        elif chosen == "libreoffice":
-            meta = render_libreoffice.export_pdf(Path(path), tmp_pdf, sheets)
-        else:
-            meta = render_excel_com.export_pdf(Path(path), tmp_pdf, sheets)
-        return _finish(
-            Path(path), tmp_pdf, dest, engine=chosen, meta=meta, mode=mode, run_id=run_id, config=config,
-            bookmarks=bookmarks, titles=titles, note=note,
-        )
-    except (render_libreoffice.LibreOfficeError, render_excel_com.ExcelComError) as exc:
-        return RenderResult(ok=False, mode=mode, engine=chosen, message=str(exc))
+        # engine="auto" falls back (Excel → LibreOffice → built-in) when an engine cannot run
+        for current in [chosen, *fallback_engines(chosen, engine, mode, config)]:
+            tmp_pdf.unlink(missing_ok=True)
+            bookmarks: list[tuple[int, str, int]] | None = None
+            try:
+                if current == "native":
+                    res = render_native.render_native(Path(path), tmp_pdf, sheets, draft=draft, run_id=run_id, title=Path(path).stem)
+                    meta: dict[str, object] = {"engine": "native", "engine_version": render_native.ENGINE_VERSION, "pages": res.pages}
+                    bookmarks = res.bookmarks
+                elif current == "libreoffice":
+                    meta = render_libreoffice.export_pdf(Path(path), tmp_pdf, sheets)
+                else:
+                    meta = render_excel_com.export_pdf(Path(path), tmp_pdf, sheets)
+            except (render_libreoffice.LibreOfficeError, render_excel_com.ExcelComError) as exc:
+                failures.append(f"{_ENGINE_LABEL[current]} failed: {exc}")
+                continue
+            notes = [note] if note and not failures else []
+            if failures:
+                notes.append("; ".join(failures) + f"; rendered with {_ENGINE_LABEL[current]}")
+            return _finish(
+                Path(path), tmp_pdf, dest, engine=current, meta=meta, mode=mode, run_id=run_id, config=config,
+                bookmarks=bookmarks, titles=titles, note=" · ".join(notes),
+            )
+        return RenderResult(ok=False, mode=mode, engine=chosen, message="; ".join(failures))
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -83,18 +83,22 @@ def test_production_like_settings_fail_closed(env: str) -> None:
     assert s.production_like
 
 
-def test_offline_mode_hides_docs_and_invite_links(tmp_path: Path, totp_clock: FakeClock) -> None:
+def test_offline_mode_hides_docs_and_hands_out_invite_links(tmp_path: Path, totp_clock: FakeClock) -> None:
     import base64
 
-    from tests.conftest import build_world
+    from tests.conftest import PASSWORD, Api, build_world
 
     key = base64.b64encode(os.urandom(32)).decode()
     w = build_world(tmp_path, totp_clock, env="offline", kms_master_key=key)
-    c = TestClient(w.app)
+    c = TestClient(w.app, base_url="http://127.0.0.1:8700")  # the desktop edition answers on loopback only
     assert c.get("/api/v1/docs").status_code == 404
-    admin = w.login("firm_admin", totp_clock)
+    u = w.users["firm_admin"]
+    r = c.post("/api/v1/auth/login", json={"email": u["email"], "password": PASSWORD})
+    r = c.post("/api/v1/auth/mfa/verify", json={"code": totp_clock.code(u["secret"])}, headers={"X-CSRF-Token": r.json()["csrf_token"]})
+    admin = Api(c, r.json()["csrf_token"])
     r = admin.post("/api/v1/admin/users/invite", json={"email": "offline.user@test.fs", "name": "Offline User"})
-    assert r.status_code == 201 and r.json()["invite_link"] is None
+    # no e-mail on the desktop edition: the administrator hands the link over on this PC
+    assert r.status_code == 201 and r.json()["invite_link"].startswith("http://testserver/invite?token=")
 
 
 def test_run_forever_in_a_thread(world: World, totp_clock: FakeClock) -> None:

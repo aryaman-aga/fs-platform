@@ -236,3 +236,39 @@ def test_render_synthetic_workbook_when_available(tmp_path: Path) -> None:
     res = render(path, tmp_path / "out", mode="draft", engine="native", config=EngagementConfig(), run_id="R-S")
     assert res.verification is not None
     assert res.verification.misses == [], res.message
+
+
+def test_soffice_version_falls_back_to_version_ini(tmp_path: Path) -> None:
+    """Windows' soffice.exe prints nothing for --version; program/version.ini has it."""
+    import stat
+
+    program = tmp_path / "program"
+    program.mkdir()
+    binary = program / "soffice"
+    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    binary.chmod(binary.stat().st_mode | stat.S_IEXEC)
+    (program / "version.ini").write_text(
+        "[Version]\nAllLanguages=en-US\nbuildid=a1b2c3\nMsiProductVersion=24.8.4.2\nUpdateUserAgent=<PRODUCT> (${buildid})\n",
+        encoding="utf-8",
+    )
+    assert render_libreoffice.soffice_version(str(binary)) == "LibreOffice 24.8.4.2 a1b2c3"
+
+
+def test_child_processes_do_not_inherit_platform_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fscore.pdf import render_excel_com
+
+    monkeypatch.setenv("FSWEB_SECRET_KEY", "s3cret")
+    monkeypatch.setenv("fsweb_db_password", "s3cret")
+    monkeypatch.setenv("PATH_FOR_TEST", "kept")
+    for env in (render_libreoffice._child_env(), render_excel_com._child_env()):
+        assert "FSWEB_SECRET_KEY" not in env and "fsweb_db_password" not in env
+        assert env["PATH_FOR_TEST"] == "kept"
+
+
+def test_libreoffice_that_cannot_start_is_a_libreoffice_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bad = tmp_path / "soffice"
+    bad.write_text("not a program", encoding="utf-8")  # exists, but not executable
+    monkeypatch.setattr(render_libreoffice, "find_soffice", lambda: str(bad))
+    wb = make_workbook(tmp_path / "w.xlsx")
+    with pytest.raises(render_libreoffice.LibreOfficeError, match="could not be started"):
+        render_libreoffice.export_pdf(wb, tmp_path / "o.pdf", ["BS"])

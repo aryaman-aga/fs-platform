@@ -58,14 +58,76 @@ def migrations_dir() -> Path:
     return Path(str(resources.files("fsweb").joinpath("migrations")))
 
 
-def run_migrations(database_url: str, revision: str = "head") -> None:
-    from alembic import command
+FIRST_REVISION = "0001"
+
+
+def alembic_config(database_url: str) -> Any:
     from alembic.config import Config
 
     cfg = Config()
     cfg.set_main_option("script_location", str(migrations_dir()))
     cfg.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(cfg, revision)
+    return cfg
+
+
+def run_migrations(database_url: str, revision: str = "head") -> None:
+    from alembic import command
+
+    command.upgrade(alembic_config(database_url), revision)
+
+
+class SchemaError(RuntimeError):
+    pass
+
+
+def sqlite_schema_state(db: Any, database_url: str) -> str:
+    """``new`` (no tables), ``unversioned`` (created before revisions were recorded), ``current``, ``behind`` (an
+    upgrade is pending — the desktop launcher backs up first) or ``ahead`` (written by a newer release)."""
+    from alembic.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect
+
+    tables = set(inspect(db.owner_engine).get_table_names())
+    if not tables - {"alembic_version"}:
+        return "new"
+    if "alembic_version" not in tables:
+        return "unversioned"
+    script = ScriptDirectory.from_config(alembic_config(database_url))
+    with db.owner_engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    if current == script.get_current_head():
+        return "current"
+    known = {rev.revision for rev in script.walk_revisions()}
+    return "behind" if current in known else "ahead"
+
+
+def migrate_sqlite(db: Any, database_url: str) -> str:
+    """SQLite (desktop edition): a new database is created from the models and stamped at the newest revision; an
+    existing one is upgraded by the Alembic scripts (batch mode, one transaction), so an installed copy keeps its data
+    across releases. A database created before revisions were recorded is taken to be at the first revision; one
+    written by a newer release is refused rather than damaged."""
+    from alembic import command
+
+    from fsweb.db import SQLITE_AUDIT_TRIGGERS
+
+    state = sqlite_schema_state(db, database_url)
+    cfg = alembic_config(database_url)
+    if state == "new":
+        db.create_all()
+        command.stamp(cfg, "head")
+        return "created"
+    if state == "ahead":
+        raise SchemaError("the database was written by a newer version of FS-Platform; install that version (or newer) again")
+    if state == "unversioned":
+        command.stamp(cfg, FIRST_REVISION)
+    command.upgrade(cfg, "head")
+    with db.owner_engine.begin() as conn:
+        for stmt in SQLITE_AUDIT_TRIGGERS:  # a batch rebuild of audit_event drops its append-only triggers
+            conn.exec_driver_sql(stmt)
+        broken = conn.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+    if broken:
+        raise SchemaError(f"the upgraded database has {len(broken)} broken reference(s); restore the backup taken before the upgrade")
+    return "upgraded"
 
 
 def cmd_migrate(args: argparse.Namespace) -> int:
@@ -73,7 +135,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     if st.db.is_postgres:
         run_migrations(st.settings.database_url)
     else:
-        st.db.create_all()
+        migrate_sqlite(st.db, st.settings.database_url)
     print("database schema is up to date")
     return 0
 
@@ -125,6 +187,7 @@ def cmd_create_breakglass(args: argparse.Namespace) -> int:
         pw, secret = one_time_password(), totp.new_secret()
         u = make_user(s, st.cipher, t[0].id, args.email, "Break-glass (sealed)", password=pw, totp_secret=secret, created_by="cli")
         u.is_break_glass = True
+        u.must_change_password = True  # the sealed password is replaced at its first (emergency) use
         role = s.execute(select(Role).where(Role.tenant_id == t[0].id, Role.code == "system_admin")).scalar_one()
         assign(s, t[0].id, u, role, None, "cli")
         audit.append(s, _actor(t[0].id), "user.breakglass_created", object_type="user", object_id=u.id)

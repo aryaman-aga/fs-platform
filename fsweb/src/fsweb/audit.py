@@ -238,7 +238,7 @@ def write_head_file(directory: str | Path, report: ChainReport, day: str | None 
     day = day or datetime.now(UTC).strftime("%Y-%m-%d")
     path = d / f"{day}.json"
     body = json.dumps({"day": day, **report.as_dict(), "written_at": _ts(utcnow())}, indent=2, sort_keys=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o444)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o444)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:  # identical bytes on every platform
         fh.write(body + "\n")
     return path

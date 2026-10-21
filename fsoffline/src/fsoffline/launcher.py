@@ -1,7 +1,7 @@
 """Start the offline edition: migrate, run the worker in-process, serve on loopback.
 
 ``fsweb`` is imported lazily so this module (and its tests) work before the web
-package is installed, and so a PyInstaller build can bundle it as a plain import.
+package is installed.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import importlib
 import inspect
 import logging
 import os
-import runpy
 import socket
 import subprocess
 import sys
@@ -60,12 +59,21 @@ def _pid_alive(pid: int) -> bool:
         return False
     if os.name == "nt":  # pragma: no cover - Windows
         import ctypes
+        from ctypes import wintypes
 
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED: it runs, in another Windows account
+        try:
+            code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return code.value == 259  # STILL_ACTIVE (an exited process stays openable while handles to it exist)
             return True
-        return False
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -121,19 +129,16 @@ def supported_env_name(preferred: str = "offline") -> str:
 
 
 def run_manage(argv: Sequence[str]) -> int:
-    """Run ``fsweb.manage`` in-process (also works inside a frozen PyInstaller build)."""
-    saved = sys.argv
-    sys.argv = ["fsweb.manage", *argv]
+    """Run an ``fsweb.manage`` command in-process (the environment from ``build_env`` must already be set)."""
+    from fsweb import manage
+
     try:
-        runpy.run_module("fsweb.manage", run_name="__main__", alter_sys=True)
-    except SystemExit as exc:
+        return manage.main(list(argv))
+    except SystemExit as exc:  # argparse errors
         code = exc.code
         if code is None:
             return 0
         return code if isinstance(code, int) else 1
-    finally:
-        sys.argv = saved
-    return 0
 
 
 class WorkerHandle:
@@ -201,22 +206,26 @@ def start_worker(stop: threading.Event, env: dict[str, str], *, settle_s: float 
     thread.join(settle_s)
     if handle.error is None:
         return handle
-    if getattr(sys, "frozen", False):
-        raise RuntimeError(f"in-process worker failed: {type(handle.error).__name__}") from handle.error
     log.warning("in-process worker failed (%s); starting it as a child process", type(handle.error).__name__)
     child_env = {**os.environ, **env}
     process = subprocess.Popen([sys.executable, "-m", "fsweb.worker"], env=child_env)
     return WorkerHandle(process=process)
 
 
-def make_server(host: str, port: int) -> Any:
+_UVICORN_DEFAULT_LOGGING = object()
+
+
+def make_server(host: str, port: int, *, log_config: Any = _UVICORN_DEFAULT_LOGGING, **config: Any) -> Any:
+    """``log_config=None`` leaves logging to the caller (the desktop runtime logs to a file; uvicorn's own setup would
+    probe the console, which pythonw does not have). Other keyword arguments go to ``uvicorn.Config``."""
     import uvicorn
 
     module = importlib.import_module("fsweb.main")
     factory = getattr(module, "create_app", None)
     app = factory() if callable(factory) else module.app
-    config = uvicorn.Config(app, host=host, port=port, log_level="info", proxy_headers=False, server_header=False)
-    return uvicorn.Server(config)
+    kwargs: dict[str, Any] = dict(config) if log_config is _UVICORN_DEFAULT_LOGGING else {"log_config": log_config, **config}
+    server_config = uvicorn.Config(app, host=host, port=port, log_level="info", proxy_headers=False, server_header=False, **kwargs)
+    return uvicorn.Server(server_config)
 
 
 def _open_browser_when_ready(host: str, port: int, url: str) -> None:
