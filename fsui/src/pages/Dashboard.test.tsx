@@ -14,13 +14,18 @@ const ADMIN = {
   permissions: { "*": { "client.manage": "allow", "users.manage": "allow" } },
 };
 const MESSAGE = "You're signed in, but you don't have access to any clients yet. Ask your FS-Platform administrator to give you a role.";
+const ENGAGEMENT = {
+  id: "e1", client_id: "c1", client_name: "Synthetic Demo", entity_id: "en1", entity_name: "Synthetic Demo", name: "FY 2025-26", type: "annual",
+  period_end: "2026-03-31", periods_in_scope_json: [], status: "CHECKED", partner_id: null, manager_id: null, due_date: null, locked_at: null,
+  ai_enabled: true, is_quarantine: false, merge_required: false, version_line: 1, legal_hold: false, version: 1, created_at: "2026-10-01T00:00:00Z",
+};
 
 describe("Signed in without a role", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("home explains that an administrator gives access, and shows the new role once given", async () => {
     let assigned = false;
-    mockApi({ "/api/v1/auth/options": OPTIONS, "/api/v1/auth/me": () => (assigned ? ME : NO_ROLE), "/api/v1/engagements": [] });
+    mockApi({ "/api/v1/auth/options": OPTIONS, "/api/v1/auth/me": () => (assigned ? ME : NO_ROLE), "/api/v1/engagements": () => (assigned ? [ENGAGEMENT] : []) });
     renderWithProviders(<AppRoutes />, { route: "/" });
 
     expect(await screen.findByText(MESSAGE)).toBeInTheDocument();
@@ -32,6 +37,7 @@ describe("Signed in without a role", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(await screen.findByText(/^Good (morning|afternoon|evening)/)).toBeInTheDocument();
     expect(screen.queryByText(MESSAGE)).toBeNull();
+    expect(await screen.findByText("FY 2025-26")).toBeInTheDocument(); // the list is reloaded too, not only the role
   });
 
   it("the client list explains it too", async () => {

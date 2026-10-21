@@ -69,6 +69,9 @@ class User:
     def post(self, path: str, extra: dict[str, str] | None = None, **kw: Any) -> httpx.Response:
         return self.c.post(path, headers=self._headers(extra), **kw)
 
+    def patch(self, path: str, **kw: Any) -> httpx.Response:
+        return self.c.patch(path, headers=self._headers(), **kw)
+
     def _signed_in(self, r: httpx.Response, status: int, what: str) -> None:
         expect(r, status, what)
         if r.json()["status"] != "ok":  # the desktop default: no authenticator
@@ -226,6 +229,21 @@ def first_run(base: str, data_dir: Path, state_file: Path) -> None:
     dl = admin.get(f"/api/v1/versions/{pdf_version}/download")
     expect(dl, 200, "watermarked download")
     assert dl.content.startswith(b"%PDF"), "download is not a PDF"
+
+    step("the corrected workbook is checked again; what remains is closed by the Partner; a FINAL PDF reconciles")
+    run = expect(admin.post(f"/api/v1/engagements/{eng['id']}/runs", json={"kind": "check"}), 202, "re-check").json()
+    recheck = wait_run(admin, run["id"], "re-check")
+    still = [f for f in expect(admin.get(f"/api/v1/runs/{recheck['id']}/findings"), 200, "findings").json() if f["severity"] == "High"]
+    for f in still:  # e.g. a signatory detail the plan cannot invent; the Partner records why it is not an issue
+        expect(admin.patch(f"/api/v1/findings/{f['id']}", json={"status": "Not an issue", "status_reason": "smoke test: agreed by the Partner"}),
+               200, "close a finding")
+    rr = expect(admin.post(f"/api/v1/engagements/{eng['id']}/render", json={"mode": "final", "engine": "libreoffice"}), 202, "final").json()
+    final = wait_run(admin, rr["id"], "FINAL PDF")
+    result = final.get("result_json") or {}
+    misses = result.get("misses")
+    assert result.get("mode") == "final", result
+    assert (len(misses) if isinstance(misses, list) else int(misses or 0)) == 0, f"FINAL PDF does not match the workbook: {result}"
+    print(f"      {len(still)} High finding(s) left after the fixes, closed; FINAL {result.get('pages')} pages")
 
     step("backup")
     proc = subprocess.run([sys.executable, "-X", "utf8", "-m", "fsoffline", "--data-dir", str(data_dir), "backup"],  # noqa: S603

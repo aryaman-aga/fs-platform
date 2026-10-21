@@ -63,6 +63,7 @@ function ClientForm({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [f, setF] = useState({ name: "", pan: "", cin: "", group_name: "", office: "", classification: "confidential" });
   const m = useMutation({
     mutationFn: () =>
@@ -78,6 +79,8 @@ function ClientForm({ onClose }: { onClose: () => void }) {
         },
       }),
     onSuccess: async (c) => {
+      // the creator may now be Partner on the new client (works on engagements): reload the permissions first
+      await refresh();
       await qc.invalidateQueries({ queryKey: qk.clients });
       toast.ok(`Client ${c.name} created`);
       onClose();

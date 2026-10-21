@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth } from "@/auth/AuthContext";
@@ -8,11 +9,13 @@ import { Button } from "./ui";
  * list: why nothing shows and what to do. Place it inside an empty-state box. */
 export function NoRoleYet() {
   const { me, refresh } = useAuth();
+  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const check = async () => {
     setBusy(true);
     try {
       await refresh(); // a role given meanwhile shows at once
+      await qc.invalidateQueries(); // and so do the clients and engagements it opens
     } finally {
       setBusy(false);
     }
