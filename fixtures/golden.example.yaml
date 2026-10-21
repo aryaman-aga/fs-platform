@@ -1,0 +1,21 @@
+# Template for fixtures/private/golden.yaml (the private acceptance oracle).
+# Copy to fixtures/private/golden.yaml on the firm's machine and fill it from the
+# build pack's real-file test cases. NEVER commit the filled-in file: it names
+# real files and quotes real figures. Values below are synthetic placeholders.
+cases:
+  - id: B-T05-example
+    file: entity-x/original.xlsx          # path under fixtures/private/
+    sha256_16: 0000000000000000           # from tools/fixtures_freeze.py
+    config:
+      period_type: spfs
+      units: millions
+      year_end: 2026-03-31
+    expect:
+      - rule: BAL-02                      # CF closing vs BS cash: report, do not plug
+        sheet: CFS
+        difference: 0.37
+      - rule: PLUG-01
+        absent: true
+    key_figures:
+      pat@CY: 12.34
+      cash@CY: 56.78

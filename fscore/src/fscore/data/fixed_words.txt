@@ -1,0 +1,51 @@
+# Fixed words / designations used in signature blocks (TXT-01 spelling check).
+# One term per line; multi-word phrases allowed. Lines starting with # are comments.
+# "known:" lines list correct variants that must never be flagged.
+Director
+Directors
+Managing Director
+Whole-time Director
+Whole Time Director
+Executive Director
+Non-Executive Director
+Independent Director
+Nominee Director
+Chairman
+Chairperson
+Partner
+Partners
+Proprietor
+Chartered Accountants
+Chartered Accountant
+Chief Financial Officer
+Chief Executive Officer
+Company Secretary
+Membership
+Registration
+Firm Registration
+Board of Directors
+For and on behalf of the Board of Directors
+As per our report of even date
+known: Accountants
+known: Accountant
+known: Chartered
+known: Officer
+known: Officers
+known: Financial
+known: Executive
+known: Secretary
+known: Managing
+known: Membership
+known: Registration
+known: Board
+known: Behalf
+known: Directed
+known: Direction
+known: Directly
+known: Partnership
+known: Partnered
+known: Particulars
+known: Proprietorship
+known: Proprietary
+known: Firm
+known: Number

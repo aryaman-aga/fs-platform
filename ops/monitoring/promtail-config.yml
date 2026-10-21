@@ -1,0 +1,27 @@
+# LEGACY: Promtail reached end of life in March 2026; new installations use Grafana Alloy
+# (ops/monitoring/alloy/config.alloy). Kept for hosts that still run Promtail during migration.
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: docker
+          site: fs-primary
+          __path__: /var/lib/docker/containers/*/*-json.log
+    pipeline_stages:
+      - docker: {}
+      - drop:
+          expression: ".*GET /api/v1/(health|ready).*"
+      - replace:
+          expression: "(?i)(?:fs_session=|x-worker-token[\"': ]+)([A-Za-z0-9._~+/=-]+)"
+          replace: "REDACTED"

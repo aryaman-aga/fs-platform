@@ -1,0 +1,11 @@
+- name: Alertmanager SMTP password from the vault
+  ansible.builtin.copy:
+    dest: "{{ fs_home }}/ops/monitoring/smtp.pass"
+    content: "{{ vault_alertmanager_smtp_password }}"
+    mode: "0600"
+  no_log: true
+
+- name: Monitoring stack is part of the compose profiles
+  ansible.builtin.assert:
+    that: "'monitoring' in fs_compose_profiles"
+    fail_msg: "enable the monitoring profile (E-OPS-01/04)"

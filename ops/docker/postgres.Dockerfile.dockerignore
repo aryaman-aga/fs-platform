@@ -1,0 +1,3 @@
+# Whitelist: the PostgreSQL image needs only the pgBackRest configuration.
+*
+!ops/backup/pgbackrest.conf

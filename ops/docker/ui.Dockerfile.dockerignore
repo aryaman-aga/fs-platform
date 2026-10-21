@@ -1,0 +1,11 @@
+# Whitelist for ops/docker/ui.Dockerfile (context = repo root): the SPA sources and the Caddyfile.
+*
+!fsui
+!ops/caddy/Caddyfile
+fsui/node_modules
+fsui/dist
+fsui/test-results
+fsui/playwright-report
+fsui/blob-report
+**/.env
+**/.env.*

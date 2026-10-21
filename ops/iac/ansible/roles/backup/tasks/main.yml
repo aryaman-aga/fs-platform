@@ -1,0 +1,35 @@
+- name: Textfile collector directory for backup metrics
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: restic configuration from the vault
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/templates/restic.env.j2"
+    dest: "{{ fs_home }}/ops/backup/restic.env"
+    mode: "0600"
+
+- name: Backup timers (ops/backup/systemd)
+  ansible.builtin.copy:
+    src: "{{ fs_home }}/ops/backup/systemd/"
+    dest: /etc/systemd/system/
+    remote_src: true
+    mode: "0644"
+
+- name: Enable backup, audit-chain and restore-drill timers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - fs-pgbackrest-full.timer
+    - fs-pgbackrest-diff.timer
+    - fs-restic-nas.timer
+    - fs-restic-offsite.timer
+    - fs-restic-forget.timer
+    - fs-restic-check.timer
+    - fs-backup-metrics.timer
+    - fs-audit-chain.timer
+    - fs-restore-drill.timer

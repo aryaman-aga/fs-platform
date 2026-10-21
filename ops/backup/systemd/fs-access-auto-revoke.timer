@@ -1,0 +1,9 @@
+[Unit]
+Description=FS-Platform access review: revoke undecided items past their deadline (daily 02:15 IST)
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

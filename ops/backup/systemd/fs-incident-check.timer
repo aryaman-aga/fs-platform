@@ -1,0 +1,9 @@
+[Unit]
+Description=FS-Platform CERT-In incident deadline reminders (every 15 minutes)
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,108 @@
+# Template library (E-RULE-02): statement layouts, note templates and standard wordings.
+# Versioned data approved by the technical desk; every prepared workbook records
+# the template ids + versions it used, and the library sha256.
+library: house-templates
+version: "2026.10.1"
+approved_by: Technical desk
+layouts:
+  bs: {version: "1", title: "Balance Sheet as at {ye}", framework: ind-as-div2}
+  pl: {version: "1", title: "Statement of Profit and Loss for the year ended {ye}", framework: ind-as-div2}
+  pl_spfs: {version: "1", title: "Statement of Profit and Loss for the three months and year ended {ye}", framework: ind-as-div2}
+  soce: {version: "1", title: "Statement of Changes in Equity for the year ended {ye}", framework: ind-as-div2}
+  cf: {version: "1", title: "Cash Flow Statement for the year ended {ye}", framework: ind-as-div2, method: indirect}
+  notes: {version: "1", title: "Notes to the financial statements for the year ended {ye}", framework: ind-as-div2}
+notes:
+  ppe: {version: "1", number: 3, title: "Property, plant and equipment and capital work-in-progress"}
+  rou: {version: "1", number: 4, title: "Right-of-use assets"}
+  intangibles: {version: "1", number: 5, title: "Other intangible assets"}
+  investments: {version: "1", number: 6, title: "Investments (non-current)"}
+  ofa: {version: "1", number: 7, title: "Other financial assets"}
+  dta: {version: "1", number: 8, title: "Deferred tax assets (net)"}
+  other_assets: {version: "1", number: 9, title: "Other assets"}
+  tr: {version: "1", number: 10, title: "Trade receivables"}
+  cash: {version: "1", number: 11, title: "Cash and cash equivalents"}
+  share_capital: {version: "1", number: 12, title: "Equity share capital"}
+  other_equity: {version: "1", number: 13, title: "Other equity"}
+  borrowings: {version: "1", number: 14, title: "Borrowings"}
+  lease: {version: "1", number: 15, title: "Lease liabilities"}
+  provisions: {version: "1", number: 16, title: "Provisions"}
+  tp: {version: "1", number: 17, title: "Trade payables"}
+  ofl: {version: "1", number: 18, title: "Other financial liabilities"}
+  ocl: {version: "1", number: 19, title: "Other current liabilities"}
+  revenue: {version: "1", number: 20, title: "Revenue from operations"}
+  other_income: {version: "1", number: 21, title: "Other income"}
+  employee: {version: "1", number: 22, title: "Employee benefits expense"}
+  finance: {version: "1", number: 23, title: "Finance costs"}
+  depreciation: {version: "1", number: 24, title: "Depreciation and amortisation expense"}
+  other_expenses: {version: "1", number: 25, title: "Other expenses"}
+  tax: {version: "1", number: 26, title: "Income tax"}
+  eps: {version: "1", number: 27, title: "Earnings per share"}
+  rpt: {version: "1", number: 28, title: "Related party disclosures"}
+  gc: {version: "1", number: 29, title: "Going concern"}
+  ratios: {version: "1", number: 30, title: "Additional regulatory information – ratios"}
+  contingent: {version: "1", number: 31, title: "Contingent liabilities and commitments"}
+  fi: {version: "1", number: 32, title: "Financial instruments"}
+  capital: {version: "1", number: 33, title: "Capital management"}
+  events: {version: "1", number: 34, title: "Events after the reporting period"}
+wordings:
+  corporate_info:
+    version: "1"
+    text: >-
+      {name} ("the Company") is a private limited company incorporated in India under the Companies Act, 2013
+      ({reg_label}: {cin}). Its registered office is at {address}. The Company provides {activity} to customers
+      in India and overseas, including group companies. The Company is a subsidiary of {holding}.
+  policies:
+    version: "1"
+    paragraphs:
+      - "2.1 Statement of compliance – These financial statements have been prepared in accordance with the Indian Accounting Standards (Ind AS) notified under section 133 of the Companies Act, 2013 read with the Companies (Indian Accounting Standards) Rules, 2015, as amended, and the presentation requirements of Division II of Schedule III to the Act."
+      - "2.2 Basis of measurement – The financial statements have been prepared on the historical cost basis, except for the net defined benefit liability, which is measured at the present value of the defined benefit obligation."
+      - "2.3 Functional and presentation currency – The functional currency of the Company is the Indian Rupee. All amounts are presented in {unit_label} with two decimals, unless otherwise stated; totals are computed on the presented figures."
+      - "2.4 Use of estimates and judgements – Estimates and underlying assumptions are reviewed on an ongoing basis. Significant estimates relate to useful lives of property, plant and equipment, expected credit losses on receivables, the defined benefit obligation and recognition of deferred tax assets."
+      - "2.5 Revenue recognition – Revenue from services is recognised over time as the services are rendered, at the transaction price allocated to the performance obligation, in accordance with Ind AS 115."
+      - "2.6 Property, plant and equipment – Items are stated at cost less accumulated depreciation and impairment. Depreciation is provided on the straight-line method over the useful lives prescribed in Schedule II to the Act."
+      - "2.7 Leases – The Company recognises a right-of-use asset and a lease liability at the commencement of a lease in accordance with Ind AS 116. Lease payments are discounted at the incremental borrowing rate."
+      - "2.8 Employee benefits – Contributions to provident fund are expensed as incurred. The gratuity obligation is determined by an independent actuary using the projected unit credit method; remeasurements are recognised in other comprehensive income."
+      - "2.9 Income taxes – Current tax is measured at the amount expected to be paid. Deferred tax is recognised on temporary differences to the extent it is probable that taxable profit will be available."
+      - "2.10 Financial instruments – Financial assets and liabilities are measured at amortised cost using the effective interest method; expected credit losses are recognised on trade receivables using the simplified approach."
+      - "2.11 Going concern – Refer note 29."
+  gc:
+    version: "1"
+    p1: "The Company has {result_cy} of ₹ {pat_cy} {unit} during the year ended {ye} (previous year: {result_py} of ₹ {pat_py} {unit}). As at {ye}, the Company has {re_label} of ₹ {re_amount} {unit} and its net worth is ₹ {nw_cy} {unit} (as at {pye}: ₹ {nw_py} {unit})."
+    p2: "As at {ye}, the {wc_a} of the Company exceed its {wc_b} by ₹ {wc_cy} {unit} (as at {pye}: ₹ {wc_py} {unit}). As at {ye}, the cash and cash equivalents of the Company amount to ₹ {cash_cy} {unit} (as at {pye}: ₹ {cash_py} {unit})."
+    p3: "Management has assessed the Company's ability to continue as a going concern, considering the following mitigating factors:"
+    factors:
+      - "(a) the holding company, {holding}, infused equity of ₹ {infusion} {unit} during the year ended {ye};"
+      - "(b) the holding company has confirmed in writing its continued financial support for a period of at least twelve months from the date of approval of these financial statements;"
+      - "(c) the Company has an approved business plan supported by a growing order book from group companies and third-party customers; and"
+      - "(d) the Company has no overdue borrowings and has met all repayment obligations on time."
+    conclusion: "Accordingly, these financial statements have been prepared on a going concern basis and do not include any adjustments that might result if the Company were unable to continue as a going concern."
+  msme:
+    version: "1"
+    text: "The information regarding micro and small enterprises has been determined on the basis of information available with the Company. There are no amounts overdue to micro and small enterprises and no interest is payable under the MSMED Act, 2006."
+  borrowings_terms:
+    version: "1"
+    paragraphs:
+      - "The term loan from bank carries interest at 9.50% p.a., is repayable in quarterly instalments and is secured by hypothecation of the Company's current assets and movable property, plant and equipment."
+      - "The loan from the holding company is unsecured and carries interest at 8.00% p.a.; interest is credited to the loan account net of tax deducted at source."
+  rpt_terms:
+    version: "1"
+    text: "Transactions with related parties are made on terms equivalent to those that prevail in arm's length transactions. Outstanding balances at the year end are unsecured, interest free (other than the loan from the holding company) and settled in cash."
+  investments_scope:
+    version: "1"
+    text: "The investment in the subsidiary is carried at cost in accordance with Ind AS 27 and is therefore outside the scope of the categories above (Ind AS 107 and Ind AS 109)."
+  fair_value:
+    version: "1"
+    text: "The carrying amounts of trade receivables, cash and cash equivalents, other financial assets, borrowings, trade payables and other financial liabilities approximate their fair values."
+  events:
+    version: "1"
+    p1: "There are no significant events after the reporting period that require adjustment to, or disclosure in, these financial statements."
+    p2: "These financial statements were approved for issue by the Board of Directors on {sign_date}."
+  share_rights:
+    version: "1"
+    text: "The Company has one class of equity shares having a par value of ₹10 per share. Each holder of equity shares is entitled to one vote per share and to dividends in proportion to the shares held."
+  actuarial:
+    version: "1"
+    text: "Principal actuarial assumptions: discount rate 7.20% p.a. (previous year 7.35% p.a.); salary escalation 8.00% p.a. (previous year 8.00% p.a.); attrition 18% p.a."
+  ratios_na:
+    version: "1"
+    text: "Inventory turnover ratio and return on investment are not applicable as the Company is a service company and holds no treasury investments."

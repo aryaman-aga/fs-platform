@@ -1,0 +1,33 @@
+{{- if .Values.ingress.enabled }}
+# API only: the SPA is served by the edge image (ops/docker/ui.Dockerfile) or a static bucket/CDN.
+# /metrics is never routed; /api/v1/admin and /api/v1/internal allow-lists are enforced at the edge
+# (Caddy / ingress middleware) AND in the API's ABAC policy.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "fs-platform.fullname" . }}
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  tls:
+    - hosts: [{{ .Values.config.siteHost | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.config.siteHost | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fs-platform.fullname" . }}-api
+                port:
+                  name: http
+{{- end }}

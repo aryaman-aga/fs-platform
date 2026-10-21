@@ -1,0 +1,55 @@
+- name: Base packages
+  ansible.builtin.apt:
+    name: [chrony, auditd, unattended-upgrades, ufw, fail2ban, jq, ca-certificates, curl, git]
+    state: present
+    update_cache: true
+
+- name: Time synchronised to NIC / NPL (CERT-In, E-SEC-05)
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../../ntp/chrony.conf"
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart chrony
+
+- name: Server clock in UTC (the UI shows IST)
+  community.general.timezone:
+    name: Etc/UTC
+
+- name: SSH hardening — keys only, no root login
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+    - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+    - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+  notify: Restart ssh
+
+- name: Firewall default deny inbound
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming
+
+- name: Allow SSH from the office networks only
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "{{ item }}"
+  loop: "{{ office_cidrs | default(['10.0.0.0/8']) }}"
+
+- name: auditd enabled (privileged command and login auditing)
+  ansible.builtin.service:
+    name: auditd
+    state: started
+    enabled: true
+
+- name: Automatic security updates
+  ansible.builtin.service:
+    name: unattended-upgrades
+    state: started
+    enabled: "{{ unattended_upgrades }}"

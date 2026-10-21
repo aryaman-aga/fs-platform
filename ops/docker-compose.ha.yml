@@ -1,0 +1,30 @@
+# HA rehearsal overlay (E-ARCH-01/02) — NOT the production HA topology.
+#
+#   docker compose --env-file ops/.env -f ops/docker-compose.yml -f ops/docker-compose.ha.yml \
+#       --profile ha up -d --build
+#
+# What this overlay gives you on ONE host: two stateless API replicas behind Caddy's load balancer
+# (sessions live in PostgreSQL, rate limits/locks in Redis), so you can practise rolling restarts and
+# prove E-ARCH-02 ("rolling restart of all API nodes with zero failed requests") before buying hardware.
+#
+# What real HA needs (12 §3) and where it lives:
+#   * 2+ nodes behind a load balancer (keepalived VIP or cloud LB) .......... ops/helm/fs-platform (k3s)
+#   * PostgreSQL primary + synchronous standby, automatic failover ......... Patroni + etcd (3 members) or a
+#                                                                             managed HA Postgres in an India region
+#   * Redis Sentinel (3) .................................................. bitnami/redis chart, sentinel.enabled
+#   * MinIO distributed, 4 drives across 2+ nodes, or cloud object storage .. minio operator / S3 ap-south-1
+#   * 2+ Windows render workers (E-ARCH-03) ................................ fsrender-win on two VMs
+# Acceptance (E-ARCH-01): kill any one node during a test run — API recovery < 2 min, DB failover < 30 s,
+# no data loss. Record the drill in the operations report (E-ITGC-04).
+services:
+  api:
+    deploy:
+      replicas: 2
+    environment:
+      FSWEB_REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      redis: { condition: service_started }
+
+  worker:
+    environment:
+      FSWEB_REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0

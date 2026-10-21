@@ -1,0 +1,47 @@
+# --- confidentiality: never commit client material -------------------------
+# Real client workbooks / PDFs and their alias map stay on the firm's machine.
+fixtures/private/
+build-pack/
+PRIVATE_FIXTURE_MAP.md
+*.fspkg
+# Excel / LibreOffice lock files
+~$*
+.~lock.*#
+
+# --- python ------------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+build/
+dist/
+
+# --- node ----------------------------------------------------------------------
+node_modules/
+fsui/dist/
+fsui/test-results/
+fsui/playwright-report/
+fsui/blob-report/
+
+# --- local runtime state -------------------------------------------------------
+.pgdata/
+var/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# --- local tools and generated files ---------------------------------------------
+.claude/
+fsui/e2e/.e2e-state.json
+sbom.json
+sbom/

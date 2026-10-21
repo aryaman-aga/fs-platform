@@ -1,0 +1,92 @@
+# FS-Platform rule catalogue (E-RULE-01). Versioned data, not code.
+# Each rule: id, family, title, default severity, certainty, fix kind, owner,
+# frameworks, effective_from / effective_to, parameters. A run records the
+# rule-set version + hash it ran with (E-RULE-03). Changing anything here is a
+# rule change under E-ITGC-02 (golden regression + technical approval).
+rule_set: fs-platform-rules
+version: "2026.10.1"
+owner: Technical desk
+rules:
+  # ---------------------------------------------------------------- casting (02 §6.1)
+  - {id: CAST-01, family: casting, title: "Vertical / linear casting on printed values", severity: High, certainty: Certain, fix_kind: auto}
+  - {id: CAST-02, family: casting, title: "Cross-casting of row totals across printed columns", severity: High, certainty: Certain, fix_kind: auto}
+  - {id: CAST-03, family: casting, title: "Total row missing cells", severity: Medium, certainty: Likely, fix_kind: auto}
+  - {id: PLUG-01, family: casting, title: "Typed rounding plug inside a formula", severity: High, certainty: Certain, fix_kind: auto, params: {auto_remove_below: 0.10, threshold: 0.99}}
+  - {id: PLUG-02, family: casting, title: "Larger typed adjustment inside a link or total", severity: Medium, certainty: Review, fix_kind: approval}
+  - {id: TYPED-01, family: casting, title: "Hard-typed total", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: HID-01, family: casting, title: "Printed total includes hidden rows/columns with values", severity: High, certainty: Certain, fix_kind: manual}
+  - {id: HID-02, family: casting, title: "Invisible content or error values in the print area", severity: Medium, certainty: Certain, fix_kind: manual}
+  # ---------------------------------------------------------------- roll-forward (02 §6.2)
+  - {id: ROLL-01, family: rollforward, title: "Opening + movements ≠ closing", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: ROLL-02, family: rollforward, title: "PY closing ≠ CY opening", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: ROLL-03, family: rollforward, title: "Net block ≠ gross − accumulated depreciation", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: ROLL-04, family: rollforward, title: "PY column formula references CY cells", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: ROLL-05, family: rollforward, title: "Deferred-tax table rolls only with the OCI sign inverted", severity: Medium, certainty: Review, fix_kind: manual}
+  # ---------------------------------------------------------------- cross-reference (02 §6.3)
+  - {id: XREF-01, family: xref, title: "Linked cells print different values", severity: High, certainty: Certain, fix_kind: approval}
+  - {id: XREF-02, family: xref, title: "Same figure, two values (discovered pairs)", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: XREF-03, family: xref, title: "Mandatory tie-out fails (BS / P&L / SOCE / cash flow / notes)", severity: High, certainty: Certain, fix_kind: manual}
+  - {id: XREF-04, family: xref, title: "Previous-year figure ≠ signed prior-year statements", severity: High, certainty: Certain, fix_kind: manual}
+  # ---------------------------------------------------------------- supporting schedules (02 §6.4)
+  - {id: SUB-01, family: subledger, title: "Receivables ageing ≠ note", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: SUB-02, family: subledger, title: "Payables ageing / MSME ≠ note", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: SUB-03, family: subledger, title: "Employee benefits: expense / split ≠ actuarial", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: SUB-04, family: subledger, title: "Leases: ROU / lease liability / P&L / CF inconsistent", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: SUB-05, family: subledger, title: "Revenue disaggregation on a different basis", severity: Medium, certainty: Review, fix_kind: manual}
+  - {id: SUB-06, family: subledger, title: "Share capital: shares × face value ≠ amount", severity: High, certainty: Certain, fix_kind: approval}
+  - {id: SUB-07, family: subledger, title: "Shareholding % inconsistent", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: SUB-08, family: subledger, title: "Financial-instrument tables incomplete vs BS", severity: Medium, certainty: Review, fix_kind: manual}
+  # ---------------------------------------------------------------- ratios (02 §6.5)
+  - {id: RATIO-01, family: ratios, title: "Ratio recomputed ≠ printed", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: RATIO-02, family: ratios, title: "Ratio formula differs from definition / caption", severity: Medium, certainty: Review, fix_kind: approval}
+  - {id: RATIO-03, family: ratios, title: "Variance > 25 % without explanation", severity: Medium, certainty: Certain, fix_kind: manual}
+  # ---------------------------------------------------------------- identity / text (02 §6.6)
+  - {id: TXT-01, family: text, title: "Signatory / DIN / CIN / FRN / membership / date inconsistencies", severity: High, certainty: Certain, fix_kind: approval}
+  - {id: TXT-02, family: text, title: "Period labels / stale years", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: TXT-03, family: text, title: "Note numbering", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: TXT-04, family: text, title: "Caption vs sign", severity: Low, certainty: Review, fix_kind: manual}
+  - {id: TXT-05, family: text, title: "Units line missing or inconsistent", severity: Low, certainty: Likely, fix_kind: manual}
+  - {id: TXT-06, family: text, title: "Narrative number ≠ table", severity: Medium, certainty: Review, fix_kind: manual}
+  - {id: TXT-07, family: text, title: "Number-format inconsistency", severity: Low, certainty: Certain, fix_kind: manual}
+  # ---------------------------------------------------------------- PDF (02 §6.7)
+  - {id: PDF-01, family: pdf, title: "PDF stale / printed values missing", severity: High, certainty: Certain, fix_kind: manual}
+  - {id: PDF-02, family: pdf, title: "PDF text (names, DIN, dates, errors) ≠ workbook", severity: High, certainty: Certain, fix_kind: manual}
+  - {id: PDF-03, family: pdf, title: "Print-area values absent from PDF (invisible text)", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: PDF-04, family: pdf, title: "PDF-only casting / cross-reference", severity: Medium, certainty: Review, fix_kind: none}
+  # ---------------------------------------------------------------- narrative (02 §6.8)
+  - {id: NARR-01, family: narrative, title: "Narrative figure ≠ statements", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: NARR-02, family: narrative, title: "Narrative claim contradicted by the figures", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: NARR-03, family: narrative, title: "Narrative figure stale (equals last year)", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: NARR-04, family: narrative, title: "Same metric quoted with different values", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: NARR-05, family: narrative, title: "Unit suspicion (×100 / ×10^5)", severity: Medium, certainty: Review, fix_kind: approval}
+  # ---------------------------------------------------------------- related parties (02 §6.9)
+  - {id: RPT-01, family: rpt, title: "Party with transactions missing from the related-party list", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: RPT-02, family: rpt, title: "Duplicate / stale related-party rows", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: RPT-03, family: rpt, title: "Hidden related-party rows with values", severity: High, certainty: Certain, fix_kind: manual}
+  - {id: RPT-04, family: rpt, title: "RPT section totals ≠ source notes", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: RPT-05, family: rpt, title: "Loan roll-forward per party", severity: Medium, certainty: Review, fix_kind: manual}
+  - {id: RPT-06, family: rpt, title: "Intercompany confirmation differences", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: RPT-07, family: rpt, title: "Party names differ across notes", severity: Low, certainty: Likely, fix_kind: manual}
+  - {id: RPT-08, family: rpt, title: "TB-driven related-party ledger built", severity: Info, certainty: Certain, fix_kind: none}
+  - {id: RPT-09, family: rpt, title: "Three-way RPT reconciliation difference (RPT note / TB / FS)", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: RPT-10, family: rpt, title: "Capital transaction not disclosed", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: RPT-11, family: rpt, title: "Relationship description incorrect", severity: Medium, certainty: Likely, fix_kind: manual}
+  - {id: RPT-12, family: rpt, title: "RPT period scope (out-of-scope columns / stale captions)", severity: Medium, certainty: Likely, fix_kind: approval}
+  # ---------------------------------------------------------------- going concern (02 §6.10)
+  - {id: GC-01, family: going_concern, title: "Going-concern figure ≠ statements", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: GC-02, family: going_concern, title: "Profit / loss wording contradicts sign", severity: High, certainty: Certain, fix_kind: approval}
+  - {id: GC-03, family: going_concern, title: "Out-of-scope period or malformed date", severity: High, certainty: Likely, fix_kind: approval}
+  - {id: GC-04, family: going_concern, title: "Note structure (hidden factors, Group vs Company, duplicates)", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: GC-05, family: going_concern, title: "Inconsistent with other notes", severity: Medium, certainty: Review, fix_kind: manual}
+  - {id: GC-06, family: going_concern, title: "Proposed corrected wording (typed text)", severity: Info, certainty: Likely, fix_kind: approval}
+  # ---------------------------------------------------------------- multi-period / entity (02 §6.11)
+  - {id: MULTI-01, family: multi, title: "Column outside the configured period scope", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: MULTI-02, family: multi, title: "Column cannot be hidden safely (shared with other content)", severity: Medium, certainty: Certain, fix_kind: manual}
+  - {id: MULTI-03, family: multi, title: "Intermediate-date roll-forward rows", severity: Medium, certainty: Likely, fix_kind: approval}
+  - {id: MULTI-04, family: multi, title: "Translation: FC balances but INR does not", severity: High, certainty: Likely, fix_kind: manual}
+  - {id: MULTI-05, family: multi, title: "Intercompany mirror mismatch across entities", severity: High, certainty: Likely, fix_kind: manual}
+  # ---------------------------------------------------------------- engine meta
+  - {id: ENG-01, family: engine, title: "Evaluator self-test below threshold / cached values missing", severity: Medium, certainty: Certain, fix_kind: none}
+  - {id: ENG-02, family: engine, title: "Workbook opened and saved since last run (sheet state changed)", severity: Info, certainty: Certain, fix_kind: none}
+  - {id: BAL-01, family: casting, title: "Balance Sheet does not tally on print", severity: High, certainty: Certain, fix_kind: auto}
+  - {id: BAL-02, family: casting, title: "Cash flow closing cash ≠ Balance Sheet cash", severity: High, certainty: Certain, fix_kind: auto}

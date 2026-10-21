@@ -1,0 +1,22 @@
+# Alternative to the systemd timers in ops/backup/systemd (use one or the other, not both).
+# Install as root:  crontab ops/backup/crontab.example   (server clock = UTC, synchronised to NIC/NPL NTP)
+# Times below are UTC; 19:30 UTC = 01:00 IST.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+FS_HOME=/opt/fs-platform
+METRICS_DIR=/var/lib/node_exporter/textfile
+COMPOSE="docker compose --env-file /opt/fs-platform/ops/.env -f /opt/fs-platform/ops/docker-compose.yml"
+
+# PostgreSQL: full weekly (Sun 01:00 IST), differential daily (Mon-Sat 01:00 IST); WAL archived continuously.
+30 19 * * 6   /opt/fs-platform/ops/backup/pgbackrest-backup.sh full  >>/var/log/fs-backup.log 2>&1
+30 19 * * 0-5 /opt/fs-platform/ops/backup/pgbackrest-backup.sh diff  >>/var/log/fs-backup.log 2>&1
+# Objects + DB repository + config: hourly to NAS and off-site.
+10 * * * *    $COMPOSE --profile backup run --rm -T backup nas      >>/var/log/fs-backup.log 2>&1
+40 * * * *    $COMPOSE --profile backup run --rm -T backup offsite  >>/var/log/fs-backup.log 2>&1
+# Retention daily, integrity check weekly.
+0 22 * * *    for t in nas offsite; do $COMPOSE --profile backup run --rm -T --entrypoint restic-forget.sh backup $t; done >>/var/log/fs-backup.log 2>&1
+30 22 * * 5   for t in nas offsite; do $COMPOSE --profile backup run --rm -T --entrypoint restic-check.sh backup $t; done  >>/var/log/fs-backup.log 2>&1
+# Freshness metrics every 5 minutes; audit chain nightly (23:50 IST); restore drill monthly.
+*/5 * * * *   /opt/fs-platform/ops/backup/backup_metrics.sh >>/var/log/fs-backup.log 2>&1
+20 18 * * *   /opt/fs-platform/ops/backup/audit-chain.sh   >>/var/log/fs-audit.log 2>&1
+30 0 1-7 * *  [ "$(date +\%u)" = 7 ] && /opt/fs-platform/ops/backup/restore_drill.sh --with-db >>/var/log/fs-restore-drill.log 2>&1

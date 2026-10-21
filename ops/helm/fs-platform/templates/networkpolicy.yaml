@@ -1,0 +1,99 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default deny for every pod of this release; then only what the architecture needs (04 §6, ADR-0020).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-default-deny
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs-platform.selector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+# API: reachable from the ingress controller and from Prometheus only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-api-ingress
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs-platform.selector" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+# Every application pod: DNS and the data services (PostgreSQL, MinIO, Redis) — nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-egress-internal
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs-platform.selector" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dataNamespace }}
+      ports:
+        - { port: 5432, protocol: TCP }
+        - { port: 9000, protocol: TCP }
+        - { port: 6379, protocol: TCP }
+        - { port: 26379, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+      ports:
+        - { port: 4317, protocol: TCP }
+{{- if and .Values.aiGateway.enabled .Values.aiGateway.egressCidrs }}
+---
+# AI gateway only: HTTPS to the approved provider endpoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-ai-egress
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs-platform.selector" . | nindent 6 }}
+      fs-platform/egress: ai-provider
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range .Values.aiGateway.egressCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - { port: 443, protocol: TCP }
+{{- end }}
+{{- end }}

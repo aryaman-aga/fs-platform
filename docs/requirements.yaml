@@ -1,0 +1,270 @@
+# Requirement register used by tools/traceability.py to build docs/TRACEABILITY.md.
+# Engine rule IDs come from fscore/src/fscore/rules/rules.yaml; this file lists the
+# platform requirements (12 §2), engagement controls (06 §2) and fixed preferences (03 §3).
+# tier: T1 = before go-live, T2 = within 6 months, T3 = when scaling.
+controls:
+  C1: Source files immutable
+  C2: Maker-checker on fix plans
+  C3: Balancing adjustments limited to rounding
+  C4: No typed plugs introduced
+  C5: Post-write verification
+  C6: Narrative as typed text
+  C7: PDF matches workbook
+  C8: Signatory master
+  C9: AI egress approval bound to payload hash
+  C10: Segregation of duties
+  C11: Period scope
+  C12: Change after release (diff)
+  C13: Backups and restore drills
+  C14: Access review
+requirements:
+  E-ARCH-01: {tier: T1, title: High-availability profile}
+  E-ARCH-02: {tier: T1, title: Stateless services}
+  E-ARCH-03: {tier: T2, title: Render-worker pool}
+  E-ARCH-04: {tier: T2, title: Deployment targets and infrastructure as code}
+  E-ARCH-05: {tier: T1, title: Idempotent jobs and transactional outbox}
+  E-ARCH-06: {tier: T2, title: API versioning and signed webhooks}
+  E-ARCH-07: {tier: T3, title: Multi-office / multi-firm readiness}
+  E-SEC-01: {tier: T1, title: SSO (OIDC / SAML) and SCIM}
+  E-SEC-02: {tier: T1, title: Attribute-based access control}
+  E-SEC-03: {tier: T1, title: Privileged access (step-up MFA, JIT elevation, break-glass)}
+  E-SEC-04: {tier: T2, title: Access recertification}
+  E-SEC-05: {tier: T1, title: CERT-In incident reporting and log retention}
+  E-SEC-06: {tier: T1, title: DPDP Act data-principal rights and breach workflow}
+  E-SEC-07: {tier: T1, title: Key management and field-level encryption}
+  E-SEC-08: {tier: T1, title: Threat model and ASVS traceability}
+  E-SEC-09: {tier: T2, title: Mode B hardening}
+  E-SEC-10: {tier: T1, title: Leak controls (watermarks, expiring links)}
+  E-SEC-11: {tier: T2, title: SIEM integration}
+  E-SEC-12: {tier: T2, title: Secure SDLC (SAST, SBOM, signed images)}
+  E-ITGC-01: {tier: T1, title: Change management}
+  E-ITGC-02: {tier: T1, title: Rule-change regression control}
+  E-ITGC-03: {tier: T1, title: Access management}
+  E-ITGC-04: {tier: T1, title: Operations}
+  E-ITGC-05: {tier: T2, title: Segregation of environments}
+  E-ITGC-06: {tier: T2, title: Control matrix and evidence pack}
+  E-DATA-01: {tier: T1, title: Trial-balance validation gate}
+  E-DATA-02: {tier: T1, title: Versioned mapping library}
+  E-DATA-03: {tier: T1, title: Concurrency (check-out / check-in, optimistic locking)}
+  E-DATA-04: {tier: T2, title: Lineage graph}
+  E-DATA-05: {tier: T2, title: Offline package integrity}
+  E-DATA-06: {tier: T2, title: Records management}
+  E-RULE-01: {tier: T1, title: Rule registry}
+  E-RULE-02: {tier: T1, title: Template library}
+  E-RULE-03: {tier: T1, title: Re-run reproducibility}
+  E-RULE-04: {tier: T2, title: Regulatory update process}
+  E-RULE-05: {tier: T2, title: Rule-quality analytics}
+  E-PREP-01: {tier: T1, title: Year-end rollover}
+  E-PREP-02: {tier: T1, title: Disclosure checklist engine}
+  E-PREP-03: {tier: T2, title: Consolidation module}
+  E-PREP-04: {tier: T2, title: Additional frameworks}
+  E-PREP-05: {tier: T2, title: Multi-currency engine}
+  E-PREP-06: {tier: T3, title: Statutory outputs (XBRL, CARO)}
+  E-PREP-07: {tier: T2, title: Notes authoring workspace}
+  E-INT-01: {tier: T2, title: TB connectors}
+  E-INT-02: {tier: T2, title: Document stores}
+  E-INT-03: {tier: T2, title: Notifications}
+  E-INT-04: {tier: T2, title: Signing workflow and UDIN}
+  E-INT-05: {tier: T3, title: Practice-management and billing export}
+  E-INT-06: {tier: T2, title: Inbound webhooks / API keys}
+  E-OPS-01: {tier: T1, title: SLOs and error budgets}
+  E-OPS-02: {tier: T1, title: OpenTelemetry tracing and correlation IDs}
+  E-OPS-03: {tier: T2, title: Status page}
+  E-OPS-04: {tier: T1, title: Alert runbooks and on-call}
+  E-OPS-05: {tier: T1, title: Performance and load testing}
+  E-OPS-06: {tier: T2, title: Support model}
+  E-OPS-07: {tier: T1, title: Documentation, training, in-app help}
+  E-OPS-08: {tier: T2, title: Feature flags and canary releases}
+  E-AI-01: {tier: T1, title: AI policy}
+  E-AI-02: {tier: T1, title: AI evaluation set}
+  E-AI-03: {tier: T1, title: Prompt and model registry}
+  E-AI-04: {tier: T2, title: AI cost and rate controls}
+  E-AI-05: {tier: T1, title: Human-in-the-loop guarantee}
+  E-BCP-01: {tier: T1, title: Business continuity plan}
+  E-BCP-02: {tier: T1, title: Key escrow (Shamir 2-of-3)}
+  E-BCP-03: {tier: T2, title: Warm DR site}
+  E-BCP-04: {tier: T2, title: Tabletop exercises}
+  E-BIZ-01: {tier: T2, title: Usage metering and plans}
+  E-BIZ-02: {tier: T3, title: GST-compliant invoicing}
+# Control matrix (docs/CONTROL_MATRIX.md, generated): for each engagement control and IT general control,
+# the code that enforces it and the tests that prove it. Every path, symbol and test name is checked by
+# tools/traceability.py --check. Python tests are "file::function"; UI tests are "file::title".
+control_matrix:
+  C1:
+    code: [fscore/src/fscore/fix/apply.py::apply_plan, fscore/src/fscore/fix/text.py::apply_text, fsweb/src/fsweb/services/common.py::store_version, fsweb/src/fsweb/storage.py::LocalStorage]
+    tests:
+      - fscore/tests/test_fix_engine.py::test_fix_rewrites_failing_totals_and_verifies
+      - fscore/tests/test_fix_engine.py::test_refuses_to_overwrite_source_and_locked_target
+      - fscore/tests/test_cli_commands.py::test_fix_guards
+      - fsweb/tests/test_files.py::test_versions_are_immutable
+      - fsweb/tests/test_storage_crypto.py::test_local_storage_is_immutable_and_worm
+      - fsweb/tests/test_storage_crypto.py::test_s3_storage_with_versioning_and_object_lock
+  C2:
+    code: [fsweb/src/fsweb/routers/fixplans.py::approve, fsweb/src/fsweb/jobs/handlers.py::handle_fix, fscore/src/fscore/models.py::plan_sha256]
+    tests:
+      - fsweb/tests/test_e2e.py::test_full_engagement_flow
+      - fsweb/tests/test_fixplans.py::test_plan_changed_after_approval_is_not_applied
+      - fsweb/tests/test_fixplans.py::test_unknown_approval_items_are_refused
+      - fscore/tests/test_audit_sqlite_store.py::test_approval_bound_to_plan_hash
+      - fsui/e2e/smoke.spec.ts::staff proposes a fix plan and cannot approve it
+      - fsweb/tests/test_controls.py::test_manager_cannot_approve_own_fix_plan
+      - fsweb/tests/test_controls.py::test_partner_cannot_approve_own_fix_plan
+  C3:
+    code: [fscore/src/fscore/config.py::balancing_threshold, fscore/src/fscore/fix/solver.py::solve_gap, fsweb/src/fsweb/routers/fixplans.py::approve_balancing]
+    tests:
+      - fsweb/tests/test_fixplans.py::test_balancing_above_threshold_is_refused
+      - fsweb/tests/test_fixplans.py::test_partner_approval_includes_balancing
+      - fscore/tests/test_acceptance.py::test_fix_closes_casting_and_rounding_gaps
+      - fscore/tests/test_controls_engine.py::test_c3_balance_sheet_gap_above_threshold_is_reported_not_balanced
+      - fscore/tests/test_controls_engine.py::test_c3_gap_at_threshold_is_balanced_through_designated_line
+      - fscore/tests/test_controls_engine.py::test_c3_threshold_is_the_engagement_fix_policy
+      - fscore/tests/test_controls_engine.py::test_c3_previous_adjustment_is_recomputed_not_topped_up
+      - fscore/tests/test_controls_engine.py::test_c3_cash_flow_gap_bands
+      - fscore/tests/test_controls_engine.py::test_c3_cash_flow_fx_sized_gap_is_reported_never_plugged
+      - fsweb/tests/test_controls.py::test_balancing_checker_must_be_a_different_person
+  C4:
+    code: [fscore/src/fscore/fix/rewrite.py::totals_rewrite, fscore/src/fscore/fix/rewrite.py::remove_plug, fscore/src/fscore/fix/verify.py::verify_copy, fscore/src/fscore/checks/plugs.py::plugs]
+    tests:
+      - fscore/tests/test_fix_engine.py::test_fix_rewrites_failing_totals_and_verifies
+      - fscore/tests/test_fix_properties.py::test_fix_makes_every_total_cast_and_is_idempotent
+      - fscore/tests/test_checks_casting.py::test_plugs_reported_even_when_casting
+      - fscore/tests/test_checks_casting.py::test_typed_total
+  C5:
+    code: [fscore/src/fscore/fix/verify.py::verify_copy, fscore/src/fscore/io/ooxml_patch.py::validate_package, fsweb/src/fsweb/jobs/handlers.py::handle_fix]
+    tests:
+      - fscore/tests/test_fix_engine.py::test_xml_validation_catches_malformed_formula_tag
+      - fscore/tests/test_fix_engine.py::test_plan_rejected_when_workbook_changed
+      - fscore/tests/test_cli_commands.py::test_fix_verification_failure_exits_3
+      - fscore/tests/test_engine_meta.py::test_inconsistent_cache_disables_fixes
+      - fsweb/tests/test_fixplans.py::test_failed_verification_keeps_the_engagement_unverified
+      - fsweb/tests/test_engine_integration.py::test_real_engine_end_to_end
+      - fsui/e2e/smoke.spec.ts::a manager approves and applies the plan; the new version verifies
+      - fscore/tests/test_controls_engine.py::test_c5_unplanned_figure_change_fails_verification
+      - fscore/tests/test_controls_engine.py::test_c5_unplanned_formula_and_visibility_changes_are_reported
+      - fscore/tests/test_controls_engine.py::test_c5_changes_outside_the_sheet_parts_are_reported
+      - fscore/tests/test_controls_engine.py::test_c5_failed_verification_deletes_copy_and_restores_previous_output
+  C6:
+    code: [fsweb/src/fsweb/routers/fixplans.py::propose_narrative, fsweb/src/fsweb/routers/fixplans.py::approve_narrative, fscore/src/fscore/fix/text.py::validate_text, fsui/src/lib/formula.ts::isFormulaLike]
+    tests:
+      - fsweb/tests/test_fixplans.py::test_formula_like_narrative_is_rejected
+      - fsweb/tests/test_fixplans.py::test_staff_narrative_needs_manager_approval
+      - fscore/tests/test_fix_engine.py::test_text_edits_are_typed_text_only
+      - fscore/tests/test_acceptance.py::test_fix_plus_approved_narrative_leaves_no_findings
+      - fscore/tests/test_checks_gc.py::test_formula_driven_narrative_gets_typed_text_proposal
+      - fscore/tests/test_checks_narr_synthetic.py::test_accumulated_losses_are_read_from_the_other_equity_note
+  C7:
+    code: [fscore/src/fscore/pdf/render.py::final_gate, fscore/src/fscore/checks/pdf_recon.py::verify, fscore/src/fscore/pdf/render_libreoffice.py::excel_fit_scales, fsweb/src/fsweb/routers/release.py::release]
+    tests:
+      - fscore/tests/test_pdf_recon.py::test_current_pdf_reconciles
+      - fscore/tests/test_pdf_recon.py::test_stale_pdf_reports_misses_and_reprint_pages
+      - fscore/tests/test_pdf_render.py::test_native_draft_renders_and_verifies
+      - fscore/tests/test_pdf_render.py::test_final_deleted_when_verification_fails
+      - fscore/tests/test_pdf_render.py::test_libreoffice_copy_gets_the_scale_excel_would_use
+      - fscore/tests/test_pdf_recon.py::test_text_beyond_the_page_edge_is_reported
+      - fscore/tests/test_pdf_recon.py::test_rupee_glyph_problems_are_reported
+      - fsui/e2e/smoke.spec.ts::the manager renders a draft PDF and it is shown with its watermark banner
+      - fsweb/tests/test_controls.py::test_release_refused_when_pdf_does_not_match_workbook
+  C8:
+    code: [fscore/src/fscore/checks/identity.py::check_signatories, fsweb/src/fsweb/services/engagements.py::signatory_master, fsweb/src/fsweb/jobs/handlers.py::_config]
+    tests:
+      - fscore/tests/test_checks_txt.py::test_director_b_shows_director_a_din
+      - fscore/tests/test_checks_txt.py::test_signatory_master_file
+      - fscore/tests/test_pdf_render.py::test_final_refused_with_high_findings
+      - fsweb/tests/test_runs.py::test_signatory_master_reaches_the_engine
+  C9:
+    code: [fscore/src/fscore/ai/approval.py::verify_approval, fscore/src/fscore/ai/platform.py::send_payload, fsweb/src/fsweb/routers/ai.py::approve, fsweb/src/fsweb/jobs/handlers.py::handle_ai]
+    tests:
+      - fscore/tests/test_ai_payload_approval.py::test_approval_binds_hash_and_rejects_changes
+      - fscore/tests/test_ai_payload_approval.py::test_self_approval_and_expiry_refused
+      - fscore/tests/test_ai_platform_bridge.py::test_self_approval_and_tampering_refused
+      - fsweb/tests/test_ai.py::test_approval_is_bound_to_the_payload_and_another_user
+      - fsweb/tests/test_ai.py::test_changed_payload_is_refused_by_the_gateway
+      - fsweb/tests/test_ai.py::test_worker_outside_the_gateway_cannot_call_out
+      - ops/tests/test_ops_configs.py::test_only_designated_services_have_egress
+  C10:
+    code: [fsweb/src/fsweb/authz/permissions.py::MATRIX_ROWS, fsweb/src/fsweb/authz/deps.py::authorize, fsweb/src/fsweb/authz/abac.py::evaluate]
+    tests:
+      - fsweb/tests/test_rbac_matrix.py::test_matrix_http
+      - fsweb/tests/test_rbac_matrix.py::test_matrix_data
+      - fsweb/tests/test_rbac_matrix.py::test_unassigned_client_is_invisible
+      - fsweb/tests/test_rbac_matrix.py::test_firm_admin_sees_the_engagement_header_only
+      - fsweb/tests/test_auth.py::test_system_admin_has_no_client_data
+      - fsweb/tests/test_e2e.py::test_dual_unlock
+      - fsweb/tests/test_postgres.py::test_rls_scopes_rows_to_assigned_clients
+      - fsweb/tests/test_controls.py::test_not_own_cell_refuses_the_owner_inside_authorize
+  C11:
+    code: [fscore/src/fscore/checks/multi.py::check_column_scope, fscore/src/fscore/checks/hide_safety.py::column_hide_safety, fscore/src/fscore/fix/planner.py::_hide_proposals]
+    tests:
+      - fscore/tests/test_checks_multi.py::test_out_of_scope_column_safe_to_hide
+      - fscore/tests/test_checks_multi.py::test_out_of_scope_column_shared_with_other_tables_is_unsafe
+      - fscore/tests/test_hide_safety.py::test_in_scope_column_is_never_safe
+      - fscore/tests/test_hide_safety.py::test_allowed_row_dates_annual_and_spfs
+      - fscore/tests/test_controls_engine.py::test_c11_safe_out_of_scope_column_is_hidden_once_approved
+      - fscore/tests/test_controls_engine.py::test_c11_unsafe_column_is_never_hidden
+  C12:
+    code: [fsweb/src/fsweb/routers/release.py::release, fscore/src/fscore/diff.py::diff, fsweb/src/fsweb/services/engagements.py::data_changed]
+    tests:
+      - fscore/tests/test_diff_workbooks.py::test_diff_reports_cells_moves_hidden_and_sheets
+      - fscore/tests/test_cli_commands.py::test_diff_command
+      - fsweb/tests/test_e2e.py::test_data_change_after_verification_returns_to_checked
+      - fsweb/tests/test_controls.py::test_second_release_carries_change_report_from_previous_release
+  C13:
+    code: [ops/backup/restore_drill.sh, fsweb/src/fsweb/manage.py::restore_drill, fsweb/src/fsweb/routers/compliance.py::approve_restore]
+    tests:
+      - fsweb/tests/test_compliance.py::test_backup_log_and_restore_approval
+      - fsweb/tests/test_fspkg.py::test_restore_drill
+      - ops/tests/test_ops_configs.py::test_required_alerts_exist
+      - ops/tests/test_ops_configs.py::test_systemd_units_pair_and_escape_variables
+    notes: The shell drills (pgBackRest, restic) are checked for strict mode and scheduling; running them is an operational drill.
+  C14:
+    code: [fsweb/src/fsweb/services/compliance.py::start_access_review, fsweb/src/fsweb/services/compliance.py::auto_revoke, fsweb/src/fsweb/routers/compliance.py::decide, fsweb/src/fsweb/manage.py::cmd_start_access_review, ops/backup/compliance-job.sh]
+    tests:
+      - fsweb/tests/test_compliance.py::test_access_review_campaign
+      - fsweb/tests/test_controls.py::test_auto_revoke_escalates_the_last_firm_admin
+      - fsweb/tests/test_controls.py::test_auto_revoke_revokes_a_firm_admin_who_is_not_the_last
+      - fsweb/tests/test_controls.py::test_expired_elevation_does_not_count_as_another_firm_admin
+      - fsweb/tests/test_controls.py::test_disabled_admin_does_not_count_as_another_firm_admin
+      - fsweb/tests/test_controls.py::test_lapsed_elevation_is_neither_reviewer_nor_decider
+      - fsweb/tests/test_platform.py::test_cli_bootstrap_chain_head_seed_and_openapi
+  E-ITGC-01:
+    code: [fsweb/src/fsweb/routers/compliance.py::approve_release, fsweb/src/fsweb/routers/compliance.py::mark_deployed, fsweb/src/fsweb/services/compliance.py::overdue_emergency_reviews, ops/runbooks/alerts/EmergencyChangeReviewOverdue.md, .github/workflows/release.yml]
+    tests:
+      - fsweb/tests/test_compliance.py::test_itgc_release_controls
+      - fsweb/tests/test_controls.py::test_emergency_release_is_deployed_first_and_reviewed_after
+      - fsweb/tests/test_controls.py::test_emergency_review_overdue_is_flagged_audited_and_alerted
+  E-ITGC-02:
+    code: [fscore/src/fscore/registry.py::rule_set_hash, fsweb/src/fsweb/routers/compliance.py::create_release, fsweb/src/fsweb/services/rules.py::record_rule_versions]
+    tests:
+      - fsweb/tests/test_compliance.py::test_itgc_release_controls
+      - fsweb/tests/test_runs.py::test_run_records_reproducibility_metadata
+      - fsweb/tests/test_runs.py::test_rule_versions_in_use_are_recorded
+      - fscore/tests/test_acceptance.py::test_detection_and_false_positive_rates
+      - fscore/tests/test_controls_engine.py::test_e_itgc_02_rule_set_hash_changes_with_any_rule_edit
+      - fscore/tests/test_controls_engine.py::test_e_itgc_02_every_run_records_the_rule_set_it_ran_with
+  E-ITGC-03:
+    code: [fsweb/src/fsweb/routers/admin.py::invite_user, fsweb/src/fsweb/routers/admin.py::disable_user, fsweb/src/fsweb/routers/admin.py::create_assignment, fsweb/src/fsweb/routers/admin.py::revoke_assignment, fsweb/src/fsweb/routers/admin.py::approve_elevation]
+    tests:
+      - fsweb/tests/test_auth.py::test_invite_flow_single_use_and_expiry
+      - fsweb/tests/test_auth.py::test_disabled_user_loses_access_immediately
+      - fsweb/tests/test_auth.py::test_jit_elevation_needs_another_admin
+      - fsweb/tests/test_controls.py::test_assignment_opens_and_revocation_closes_engagement_access
+      - fsweb/tests/test_controls.py::test_only_those_who_may_grant_a_role_may_revoke_it
+      - fsweb/tests/test_controls.py::test_lapsed_elevation_does_not_block_a_permanent_assignment
+  E-ITGC-04:
+    code: [ops/monitoring/alerts.yml, fsweb/src/fsweb/services/compliance.py::overdue_incidents, fsweb/src/fsweb/manage.py::cmd_incident_check]
+    tests:
+      - ops/tests/test_ops_configs.py::test_every_alert_links_an_existing_runbook
+      - fsweb/tests/test_compliance.py::test_certin_incident_six_hour_deadline
+      - fsweb/tests/test_platform.py::test_health_ready_metrics
+      - fsweb/tests/test_auth.py::test_breakglass_use_raises_alert
+  E-ITGC-05:
+    code: [fsweb/src/fsweb/settings.py::validate_for_env, ops/itgc/operations.md]
+    tests:
+      - fsweb/tests/test_platform.py::test_production_like_settings_fail_closed
+    notes: Separate development, staging and production environments are an operational procedure (T2); the code enforces fail-closed production settings.
+  E-ITGC-06:
+    code: [fsweb/src/fsweb/services/compliance.py::build_evidence_pack, tools/traceability.py]
+    tests:
+      - fsweb/tests/test_compliance.py::test_evidence_pack_usage_and_health
+      - ops/tests/test_ops_docs.py::test_control_matrix_draft_maps_all_controls
+      - tools/tests/test_traceability.py::test_matrices_are_current_and_every_link_resolves

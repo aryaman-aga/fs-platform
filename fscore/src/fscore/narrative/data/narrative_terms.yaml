@@ -1,0 +1,49 @@
+# Narrative phrase dictionary (02 §6.8 step 3). Versioned data, extendable per firm.
+# Each metric lists regular expressions (case-insensitive) matched against the
+# sentence text; more specific metrics are listed first and win ties.
+# polarity: words that set the sign of the quoted amount for that metric.
+version: "narrative-terms/1"
+metrics:
+  - metric: tci
+    phrases: ['total\s+comprehensive\s+(income|loss|\(loss\)|income\s*/\s*\(loss\))']
+  - metric: pbt
+    phrases: ['(profit|loss|\(loss\))\s*(/\s*\(?loss\)?\s*)?before\s+(income\s+)?tax', '\bpbt\b']
+  - metric: retained_earnings
+    phrases: ['accumulated\s+loss(es)?', 'retained\s+earnings', '(deficit|surplus)\s+in\s+(the\s+)?statement\s+of\s+profit']
+    negative_words: ['accumulated\s+loss', 'deficit']
+  - metric: nca_ncl_gap
+    phrases: ['current\s+liabilities(?:\s+[\w'']+){0,4}?\s+(have\s+|had\s+)?exceed(ed|s)?\s+(its\s+|the\s+|their\s+)?current\s+assets', 'excess\s+of\s+current\s+liabilities\s+over\s+current\s+assets', 'net\s+current\s+liabilities']
+  - metric: working_capital
+    phrases: ['working\s+capital', 'net\s+current\s+assets', 'current\s+assets(?:\s+[\w'']+){0,4}?\s+(have\s+)?exceed(ed|s)?\s+(its\s+|the\s+|their\s+)?current\s+liabilities']
+    negative_words: ['negative\s+working\s+capital', 'working\s+capital\s+deficit']
+  - metric: net_worth
+    phrases: ['net\s*-?\s*worth', 'shareholders''?\s+funds', 'total\s+equity', 'equity\s+of\s+the\s+(company|entity)']
+    negative_words: ['negative\s+net\s*worth', 'net\s*worth\s+(is|was|stood)\s+negative']
+  - metric: equity_infused
+    phrases: ['infus(ed|ion|ing)', 'capital\s+infusion', 'equity\s+contribution', 'fresh\s+equity', 'issued?\s+(and\s+allotted\s+)?[\w\s,]{0,40}equity\s+shares', 'allot(ted|ment)\s+of\s+[\w\s,]{0,40}shares', 'subscri(bed|ption)\s+(to\s+)?[\w\s,]{0,30}shares']
+  - metric: share_capital
+    phrases: ['share\s+capital', 'paid[\s-]*up\s+capital']
+  - metric: borrowings
+    phrases: ['borrowings', 'unsecured\s+loans?', 'promoter\s+loans?', 'loans?\s+from\s+(the\s+)?(holding|parent|group|related)', 'inter[\s-]*corporate\s+loans?', 'term\s+loans?']
+  - metric: cash
+    phrases: ['cash\s+and\s+cash\s+equivalents', 'cash\s+and\s+bank\s+balances?', 'bank\s+balances?', 'cash\s+balances?']
+  - metric: msme_interest
+    phrases: ['interest\s+(payable|paid|due|accrued)\s+(under|as\s+per)\s+(the\s+)?msmed', 'interest\s+under\s+(the\s+)?msmed']
+  - metric: msme_due
+    phrases: ['dues?\s+to\s+micro\s+and\s+small', 'outstanding\s+to\s+micro', 'msme\s+dues', 'micro\s+and\s+small\s+enterprises']
+  - metric: csr_obligation
+    phrases: ['csr\s+obligation', 'amount\s+required\s+to\s+be\s+spent', 'prescribed\s+csr']
+  - metric: csr_spent
+    phrases: ['amount\s+(of\s+expenditure\s+)?spent', 'csr\s+expenditure', 'spent\s+(on|towards)\s+csr']
+  - metric: remuneration
+    phrases: ['managerial\s+remuneration', 'remuneration']
+  - metric: provision_doubtful
+    phrases: ['provision\s+for\s+(doubtful|expected\s+credit)', 'allowance\s+for\s+(doubtful|expected\s+credit)', 'expected\s+credit\s+loss', '\becl\b']
+  - metric: contingent
+    phrases: ['contingent\s+liabilit', 'claims\s+against\s+the\s+company', 'demands?\s+(raised|from|of)']
+  - metric: revenue
+    phrases: ['revenue\s+from\s+operations', '\brevenues?\b', '\bturnover\b', '\bsales\b']
+  - metric: pat
+    phrases: ['net\s+(profit|loss)', '(profit|loss|\(loss\))\s+after\s+tax', '(profit|loss|\(loss\)|profit\s*/\s*\(loss\))\s+for\s+the\s+(year|period|quarter|three|nine|six)', '(incurred|earned|reported|made|posted|recorded)\s+(a\s+)?(net\s+)?(cash\s+)?(profits?|loss(es)?)', '\b(profits?|loss(es)?)\s+of\b', '\blosses\b', '\bprofits?\b', '\bloss\b']
+    negative_words: ['\bloss(es)?\b', '\(loss\)']
+    try_also: [pbt]

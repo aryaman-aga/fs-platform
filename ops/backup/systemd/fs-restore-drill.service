@@ -1,0 +1,14 @@
+[Unit]
+Description=FS-Platform monthly restore drill (control C13)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=FS_HOME=/opt/fs-platform
+Environment=METRICS_DIR=/var/lib/node_exporter/textfile
+Environment=FS_EVIDENCE_DIR=/var/lib/fs-platform/evidence
+ExecStart=/opt/fs-platform/ops/backup/restore_drill.sh --with-db
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -1,0 +1,44 @@
+# Alertmanager routing (04 §3: alerting to the firm's e-mail / WhatsApp business number).
+# Alerts carry infrastructure facts only; notification templates never include client data.
+global:
+  smtp_smarthost: smtp.example-firm.in:587
+  smtp_from: fs-platform-alerts@example-firm.in
+  smtp_auth_username: fs-platform-alerts@example-firm.in
+  smtp_auth_password_file: /etc/alertmanager/smtp.pass
+  smtp_require_tls: true
+  resolve_timeout: 5m
+
+route:
+  receiver: it-email
+  group_by: [alertname, kind, queue]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: on-call
+      repeat_interval: 1h
+      continue: false
+
+receivers:
+  - name: it-email
+    email_configs:
+      - to: it@example-firm.in
+        send_resolved: true
+  - name: on-call
+    email_configs:
+      - to: it@example-firm.in, firm-admin@example-firm.in
+        send_resolved: true
+    webhook_configs:
+      # Firm-operated relay that forwards a short text to the WhatsApp Business number / Teams.
+      - url: https://alerts-relay.example-firm.in/hooks/fs-platform
+        send_resolved: true
+        max_alerts: 10
+
+inhibit_rules:
+  # While the API is down, latency / error-budget / backlog alerts are noise.
+  - source_matchers: ['alertname="ApiDown"']
+    target_matchers: ['alertname=~"ApiLatencyP95High|ErrorBudgetBurn|JobQueueBacklog|CheckRunP95High|RenderP95High"']
+  # A failing backup job explains a stale off-site copy.
+  - source_matchers: ['alertname="BackupJobFailed"', 'kind="restic_offsite"']
+    target_matchers: ['alertname="OffsiteBackupStale"']

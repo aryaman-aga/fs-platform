@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FS-Platform render worker MSI (WiX Toolset v4+). Sketch: adjust the Component GUIDs,
+  harvest the PyInstaller output folder (wix extension heat / Files element) and sign the
+  result. The worker token is NOT shipped; administrators provision it separately.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="FS-Platform Render Worker"
+           Manufacturer="FS-Platform"
+           Version="1.0.0"
+           UpgradeCode="6C9E1E52-6F0B-4C1B-9E2F-3A7C1A0F5D10"
+           Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of the FS-Platform render worker is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="FSRender">
+        <!-- PyInstaller one-folder output is harvested into this directory. -->
+        <Component Id="WorkerExe" Guid="3E1B8F1C-0C9A-4D6B-8E0B-5B7F2E9A4C21">
+          <File Id="FsrenderExe" Source="dist\fsrender-win\fsrender-win.exe" KeyPath="yes" />
+          <ServiceInstall Id="FSRenderService"
+                          Name="FSRenderWorker"
+                          DisplayName="FS-Platform Render Worker"
+                          Description="Exports FS-Platform statement PDFs with Microsoft Excel for the internal render queue."
+                          Type="ownProcess"
+                          Start="auto"
+                          ErrorControl="normal"
+                          Account="[SERVICEACCOUNT]"
+                          Password="[SERVICEPASSWORD]"
+                          Arguments="service-host" />
+          <ServiceControl Id="FSRenderServiceControl" Name="FSRenderWorker" Stop="both" Remove="uninstall" Wait="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAFOLDER" Name="FSRender">
+        <Component Id="DataFolder" Guid="9A4D2C7E-1F3B-4E8A-B6C5-0D2E7F9A1B34">
+          <CreateFolder />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Property Id="SERVICEACCOUNT" Value="FIRM\svc-render" />
+    <Property Id="SERVICEPASSWORD" Hidden="yes" />
+
+    <Feature Id="Main" Title="Render worker">
+      <ComponentRef Id="WorkerExe" />
+      <ComponentRef Id="DataFolder" />
+    </Feature>
+  </Package>
+</Wix>

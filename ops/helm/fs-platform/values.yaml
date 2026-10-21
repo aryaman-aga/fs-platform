@@ -1,0 +1,115 @@
+# FS-Platform HA values. Secrets are NEVER put here: create the Secret named in `existingSecret`
+# (sealed-secrets / external-secrets / Vault) with these keys:
+#   FSWEB_SECRET_KEY, FSWEB_KMS_MASTER_KEY, FSWEB_DATABASE_URL (runtime role fsweb_app),
+#   FSWEB_APP_DATABASE_URL, FSWEB_OWNER_DATABASE_URL (migrations only), FSWEB_S3_ACCESS_KEY,
+#   FSWEB_S3_SECRET_KEY, FSWEB_WORKER_TOKEN, FSWEB_PKG_SIGNING_KEY, FSWEB_OIDC_CLIENT_SECRET,
+#   FSWEB_REDIS_URL, and ANTHROPIC_API_KEY (mounted into the ai-gateway only).
+existingSecret: fs-platform-secrets
+
+image:
+  registry: ghcr.io/example-firm
+  pullPolicy: IfNotPresent
+  # Production pins images by digest (E-SEC-12); the digest wins over the tag when set.
+  api:
+    repository: fs-platform-api
+    tag: "1.0.0"
+    digest: ""
+  worker:
+    repository: fs-platform-worker
+    tag: "1.0.0"
+    digest: ""
+imagePullSecrets: []
+
+config:
+  env: prod
+  siteHost: fs.example-firm.in
+  storage: s3://fs-objects
+  s3Endpoint: http://minio.fs-platform-data.svc.cluster.local:9000
+  s3Region: ap-south-1
+  officeCidrs: "10.10.0.0/16,192.168.10.0/24"
+  oidcIssuer: ""
+  oidcClientId: ""
+  aiEnabled: false
+  logLevel: INFO
+  otlpEndpoint: ""  # e.g. http://otel-collector.monitoring.svc:4317
+
+api:
+  replicas: 2
+  workers: 2  # uvicorn worker processes per pod
+  resources:
+    requests: { cpu: 500m, memory: 768Mi }
+    limits: { cpu: "2", memory: 2Gi }
+  pdb:
+    minAvailable: 1
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+worker:
+  replicas: 2
+  queues: []  # empty = fsweb's default queue (checks, plans, fixes, renders, diffs, preparation); never ai-gateway
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits: { cpu: "2", memory: 6Gi }
+  pdb:
+    minAvailable: 1
+  workDirSizeLimit: 20Gi
+
+aiGateway:
+  enabled: false
+  replicas: 1
+  # Provider endpoints the gateway may reach on 443 (ADR-0020). Use the narrowest ranges your
+  # provider / private endpoint documents; everything else stays blocked by the NetworkPolicy.
+  egressCidrs: []
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+ingress:
+  enabled: true
+  className: traefik  # k3s default; or nginx
+  annotations: {}
+  tlsSecretName: fs-platform-tls
+  maxBodySize: 210m
+
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: kube-system
+  monitoringNamespace: monitoring
+  dataNamespace: fs-platform-data  # PostgreSQL (Patroni / CNPG), MinIO, Redis
+
+migrations:
+  enabled: true
+
+cron:
+  timeZone: Asia/Kolkata
+  auditChain:
+    schedule: "50 23 * * *"
+  restoreDrill:
+    # runs on days 1-7 and executes only on the Sunday among them (first Sunday of the month)
+    schedule: "0 6 1-7 * *"
+  incidentCheck:
+    schedule: "*/15 * * * *"  # CERT-In six-hour reporting deadline reminders
+  autoRevoke:
+    schedule: "15 2 * * *"  # access-review items left undecided past their deadline
+  accessReview:
+    schedule: "0 9 1 1,4,7,10 *"  # quarterly access-review campaign
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []

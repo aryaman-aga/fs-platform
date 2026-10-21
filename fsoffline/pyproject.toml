@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fsoffline"
+version = "1.0.0"
+description = "FS-Platform offline edition (Mode C): the full web UI on 127.0.0.1 with SQLite and local storage"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+  "fsweb",
+  "uvicorn>=0.30",
+  "cryptography>=42",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+fsoffline = "fsoffline.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

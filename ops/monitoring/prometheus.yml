@@ -1,0 +1,62 @@
+# Prometheus for FS-Platform (E-OPS-01 SLOs, E-OPS-04 alerting, 07 §6 backup monitoring).
+# Metric contract with fsweb (see ops/monitoring/README.md):
+#   fsweb_http_requests_total{method,route,status}            counter
+#   fsweb_http_request_seconds_bucket{route}                histogram
+#   fsweb_job_queue_depth{queue}                              gauge
+#   fsweb_run_duration_seconds_bucket{kind}                   histogram (check|fix|render|ai_review|prepare|diff)
+#   fsweb_render_worker_last_heartbeat_timestamp_seconds{worker_id}  gauge
+# Backup / audit metrics come from node_exporter's textfile collector (ops/backup/*.sh).
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    site: fs-primary
+    # Base URL where ops/runbooks is published (internal Git or wiki); used in alert annotations.
+    runbook_base: https://git.example-firm.in/fs-platform/blob/main/ops/runbooks
+
+rule_files:
+  - /etc/prometheus/recording-rules.yml
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: fsweb-api
+    metrics_path: /metrics
+    dns_sd_configs:  # every API replica (Docker DNS returns one A record per container)
+      - names: ["api"]
+        type: A
+        port: 8000
+        refresh_interval: 30s
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["minio:9000"]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]

@@ -1,0 +1,14 @@
+[Unit]
+Description=FS-Platform restic integrity check
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=FS_HOME=/opt/fs-platform
+Environment=METRICS_DIR=/var/lib/node_exporter/textfile
+Environment=FS_EVIDENCE_DIR=/var/lib/fs-platform/evidence
+ExecStart=/bin/sh -c 'for t in nas offsite; do /usr/bin/docker compose --env-file /opt/fs-platform/ops/.env -f /opt/fs-platform/ops/docker-compose.yml --profile backup run --rm -T --entrypoint restic-check.sh backup $$t || exit 1; done'
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

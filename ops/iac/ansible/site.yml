@@ -1,0 +1,15 @@
+# FS-Platform on-premises / VM provisioning (E-ARCH-04). Idempotent; run from an admin workstation:
+#   ansible-playbook -i inventory.ini site.yml --check   # dry run
+#   ansible-playbook -i inventory.ini site.yml
+- name: Baseline hardening, time sync and auditing for every host
+  hosts: fs_all
+  roles:
+    - common
+
+- name: Container runtime and the FS-Platform stack
+  hosts: fs_app
+  roles:
+    - docker
+    - fs_platform
+    - backup
+    - monitoring

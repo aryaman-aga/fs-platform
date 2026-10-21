@@ -1,0 +1,425 @@
+# FS-Platform — single-node profile (ADR-0002, 04 §2 mode A, 12 §3 "single-node profile").
+#
+#   cp ops/.env.example ops/.env          # fill in every secret (see comments there)
+#   docker compose --env-file ops/.env -f ops/docker-compose.yml up -d --build
+#   docker compose --env-file ops/.env -f ops/docker-compose.yml exec api python -m fsweb.manage bootstrap \
+#       --tenant "Example Firm" --admin-email admin@example-firm.in
+#
+# Profiles: (none) core services · `tunnel` Cloudflare Tunnel · `av` ClamAV · `ha` Redis ·
+#           `monitoring` Prometheus/Alertmanager/Grafana/Loki/Alloy/Tempo/OTel · `backup` restic tooling.
+#
+# Network segregation (E-SEC-08, threat model):
+#   edge      – published ports / tunnel only (Caddy, cloudflared)
+#   internal  – `internal: true`, no route to the internet: API, workers, DB, object store, cache
+#   egress    – ONLY the ai-gateway (decision D6 / ADR-0020: the single component with egress)
+name: fs-platform
+
+x-app-env: &app-env
+  FSWEB_ENV: prod
+  # Runtime role is the RLS-enforced `fsweb_app`; only the one-shot `migrate` service gets the owner role.
+  FSWEB_DATABASE_URL: postgresql+psycopg://fsweb_app:${FSWEB_APP_PASSWORD:?set FSWEB_APP_PASSWORD}@postgres:5432/fsweb
+  FSWEB_APP_DATABASE_URL: postgresql+psycopg://fsweb_app:${FSWEB_APP_PASSWORD:?set FSWEB_APP_PASSWORD}@postgres:5432/fsweb
+  FSWEB_STORAGE: s3://${FSWEB_S3_BUCKET:-fs-objects}
+  FSWEB_S3_ENDPOINT: http://minio:9000
+  FSWEB_S3_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY:?set MINIO_APP_ACCESS_KEY}
+  FSWEB_S3_SECRET_KEY: ${MINIO_APP_SECRET_KEY:?set MINIO_APP_SECRET_KEY}
+  FSWEB_S3_REGION: ${FSWEB_S3_REGION:-ap-south-1}
+  FSWEB_SECRET_KEY: ${FSWEB_SECRET_KEY:?set FSWEB_SECRET_KEY}
+  FSWEB_KMS_MASTER_KEY: ${FSWEB_KMS_MASTER_KEY:?set FSWEB_KMS_MASTER_KEY}
+  FSWEB_PKG_SIGNING_KEY: ${FSWEB_PKG_SIGNING_KEY:-}
+  FSWEB_PKG_TRUSTED_KEYS: ${FSWEB_PKG_TRUSTED_KEYS:-}
+  FSWEB_COOKIE_SECURE: "true"
+  FSWEB_ALLOWED_ORIGINS: https://${FS_SITE_ADDRESS:?set FS_SITE_ADDRESS}
+  FSWEB_PUBLIC_BASE_URL: https://${FS_SITE_ADDRESS:?set FS_SITE_ADDRESS}
+  FSWEB_OIDC_ISSUER: ${FSWEB_OIDC_ISSUER:-}
+  FSWEB_OIDC_CLIENT_ID: ${FSWEB_OIDC_CLIENT_ID:-}
+  FSWEB_OIDC_CLIENT_SECRET: ${FSWEB_OIDC_CLIENT_SECRET:-}
+  FSWEB_REDIS_URL: ${FSWEB_REDIS_URL:-}
+  FSWEB_OFFICE_CIDRS: ${FSWEB_OFFICE_CIDRS:-}
+  FSWEB_WORK_DIR: /work
+  FSWEB_AUDIT_HEAD_DIR: /audit-heads
+  FSWEB_WORKER_TOKEN: ${FSWEB_WORKER_TOKEN:?set FSWEB_WORKER_TOKEN}
+  FSWEB_AI_ENABLED: ${FSWEB_AI_ENABLED:-false}
+  FSWEB_CLAMD_SOCKET: ${FSWEB_CLAMD_SOCKET:-}
+  FSWEB_LOG_LEVEL: ${FSWEB_LOG_LEVEL:-INFO}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_SERVICE_NAME: fsweb
+  TZ: UTC
+
+x-app-common: &app-common
+  restart: unless-stopped
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  tmpfs: ["/tmp:size=512m"]
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "10" }
+
+services:
+  # ------------------------------------------------------------------ edge
+  caddy:
+    build:
+      context: ..
+      dockerfile: ops/docker/ui.Dockerfile
+    image: ${REGISTRY:-local}/fs-platform-ui:${FS_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      FS_SITE_ADDRESS: ${FS_SITE_ADDRESS:?set FS_SITE_ADDRESS}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      FS_OFFICE_CIDRS: ${FS_OFFICE_CIDRS_CADDY:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
+      FS_RENDER_WORKER_CIDRS: ${FS_RENDER_WORKER_CIDRS:-10.0.0.0/8}
+    ports:
+      - "${FS_HTTPS_BIND:-0.0.0.0}:443:443"
+      - "${FS_HTTP_BIND:-0.0.0.0}:80:80"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, internal]
+    depends_on:
+      api: { condition: service_healthy }
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    security_opt: ["no-new-privileges:true"]
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+    networks: [edge]
+    depends_on: [caddy]
+
+  # ------------------------------------------------------------------ application
+  migrate:
+    <<: *app-common
+    restart: "no"
+    build:
+      context: ..
+      dockerfile: ops/docker/python.Dockerfile
+      target: api
+    image: ${REGISTRY:-local}/fs-platform-api:${FS_VERSION:-dev}
+    command: ["python", "-m", "fsweb.manage", "migrate"]
+    environment:
+      <<: *app-env
+      FSWEB_DATABASE_URL: postgresql+psycopg://fsweb_owner:${FSWEB_OWNER_PASSWORD:?set FSWEB_OWNER_PASSWORD}@postgres:5432/fsweb
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app-common
+    image: ${REGISTRY:-local}/fs-platform-api:${FS_VERSION:-dev}
+    build:
+      context: ..
+      dockerfile: ops/docker/python.Dockerfile
+      target: api
+    environment: *app-env
+    volumes:
+      - work-api:/work
+      - audit-heads:/audit-heads
+    networks: [internal]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    <<: *app-common
+    image: ${REGISTRY:-local}/fs-platform-worker:${FS_VERSION:-dev}
+    build:
+      context: ..
+      dockerfile: ops/docker/python.Dockerfile
+      target: worker
+    command: ["python", "-m", "fsweb.worker"]
+    environment:
+      <<: *app-env
+      HOME: /tmp  # LibreOffice needs a writable profile directory on a read-only root filesystem
+    tmpfs: ["/tmp:size=2g"]
+    volumes:
+      - work-worker:/work
+    networks: [internal]  # no egress: workers never reach the internet (04 §6)
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    deploy:
+      replicas: ${FS_WORKER_REPLICAS:-2}
+      resources:
+        limits: { cpus: "2.0", memory: 6g }
+
+  ai-gateway:
+    <<: *app-common
+    image: ${REGISTRY:-local}/fs-platform-api:${FS_VERSION:-dev}
+    command: ["python", "-m", "fsweb.worker", "--queues", "ai-gateway"]
+    environment:
+      <<: *app-env
+      FSWEB_AI_ENABLED: ${FSWEB_AI_ENABLED:-false}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AWS_REGION: ${AI_AWS_REGION:-ap-south-1}
+    volumes:
+      - work-ai:/work
+    networks: [internal, egress]  # the ONLY service with an egress route (ADR-0020)
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  # ------------------------------------------------------------------ data
+  postgres:
+    build:
+      context: ..
+      dockerfile: ops/docker/postgres.Dockerfile
+    image: ${REGISTRY:-local}/fs-platform-postgres:${FS_VERSION:-dev}
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}
+      FSWEB_OWNER_PASSWORD: ${FSWEB_OWNER_PASSWORD:?set FSWEB_OWNER_PASSWORD}
+      FSWEB_APP_PASSWORD: ${FSWEB_APP_PASSWORD:?set FSWEB_APP_PASSWORD}
+      PGBACKREST_REPO1_CIPHER_PASS: ${PGBACKREST_CIPHER_PASS:?set PGBACKREST_CIPHER_PASS}
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=fs archive-push %p
+      - -c
+      - archive_timeout=300           # a WAL segment at least every 5 min → RPO 15 min (07 §1)
+      - -c
+      - max_wal_senders=5
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_statement=ddl              # never log DML: statements could carry client figures
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pgbackrest-repo:/var/lib/pgbackrest
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    shm_size: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fsweb"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:latest}
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_KMS_SECRET_KEY: ${MINIO_KMS_SECRET_KEY:?set MINIO_KMS_SECRET_KEY}  # SSE at rest (05 §4)
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    volumes:
+      - minio-data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-quay.io/minio/mc:latest}
+    restart: "no"
+    entrypoint: ["/bin/sh", "/init/minio-init.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_APP_ACCESS_KEY: ${MINIO_APP_ACCESS_KEY:?set MINIO_APP_ACCESS_KEY}
+      MINIO_APP_SECRET_KEY: ${MINIO_APP_SECRET_KEY:?set MINIO_APP_SECRET_KEY}
+      FSWEB_S3_BUCKET: ${FSWEB_S3_BUCKET:-fs-objects}
+      FS_FINALS_BUCKET: ${FS_FINALS_BUCKET:-fs-finals}
+      FS_FINALS_RETENTION_DAYS: ${FS_FINALS_RETENTION_DAYS:-2557}   # 7 years (ADR-0009)
+    volumes:
+      - ./minio:/init:ro
+    networks: [internal]
+    depends_on:
+      minio: { condition: service_healthy }
+
+  redis:
+    profiles: ["ha"]
+    image: ${REDIS_IMAGE:-redis:7.4-bookworm}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD}", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+
+  clamav:
+    profiles: ["av"]
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    restart: unless-stopped
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks: [internal, egress]  # signature updates (freshclam) only; clamd is reached on the internal network
+    # Set FSWEB_CLAMD_SOCKET=tcp://clamav:3310 in ops/.env to enable upload scanning (05 §5).
+
+  # ------------------------------------------------------------------ backups (run by systemd timers, ops/backup)
+  backup:
+    profiles: ["backup"]
+    build:
+      context: ..
+      dockerfile: ops/docker/backup.Dockerfile
+    image: ${REGISTRY:-local}/fs-platform-backup:${FS_VERSION:-dev}
+    restart: "no"
+    env_file:
+      - path: ./backup/restic.env   # copy from restic.env.example
+        required: false
+    environment:
+      TZ: UTC
+    volumes:
+      - pgbackrest-repo:/sources/pgbackrest:ro
+      - minio-data:/sources/minio:ro
+      - audit-heads:/sources/audit-heads:ro
+      - ./:/sources/ops-config:ro
+      - backup-metrics:/metrics
+      - restic-cache:/root/.cache/restic
+    networks: [internal, egress]  # off-site object storage in an India region (07 §3)
+
+  # ------------------------------------------------------------------ monitoring (E-OPS-01/02/04)
+  prometheus:
+    profiles: ["monitoring"]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=400d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./monitoring/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
+      - prometheus-data:/prometheus
+    networks: [internal]
+
+  alertmanager:
+    profiles: ["monitoring"]
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks: [internal, egress]  # e-mail / webhook notifications (no client data in alerts)
+
+  node-exporter:
+    profiles: ["monitoring"]
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.9.1}
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+      - --collector.timex
+    volumes:
+      - /:/host:ro,rslave
+      - backup-metrics:/textfile:ro
+    networks: [internal]
+    pid: host
+
+  postgres-exporter:
+    profiles: ["monitoring"]
+    image: ${POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.17.1}
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}@postgres:5432/postgres?sslmode=disable
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  grafana:
+    profiles: ["monitoring"]
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.0.2}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SERVER_ROOT_URL: https://${FS_SITE_ADDRESS:?set FS_SITE_ADDRESS}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks: [internal]
+
+  loki:
+    profiles: ["monitoring"]
+    image: ${LOKI_IMAGE:-grafana/loki:3.5.0}
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks: [internal]
+
+  alloy:
+    profiles: ["monitoring"]
+    image: ${ALLOY_IMAGE:-grafana/alloy:latest}
+    restart: unless-stopped
+    command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
+    volumes:
+      - ./monitoring/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro  # log files only; no docker.sock
+    networks: [internal]
+
+  tempo:
+    profiles: ["monitoring"]
+    image: ${TEMPO_IMAGE:-grafana/tempo:2.8.1}
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    volumes:
+      - ./monitoring/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    networks: [internal]
+
+  otel-collector:
+    profiles: ["monitoring"]
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.128.0}
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./monitoring/otel-collector.yml:/etc/otelcol/config.yml:ro
+    networks: [internal]
+
+networks:
+  edge: {}
+  internal:
+    internal: true
+  egress: {}
+
+volumes:
+  pgdata: {}
+  pgbackrest-repo: {}
+  minio-data: {}
+  redis-data: {}
+  caddy-data: {}
+  caddy-config: {}
+  clamav-db: {}
+  work-api: {}
+  work-worker: {}
+  work-ai: {}
+  audit-heads: {}
+  backup-metrics: {}
+  restic-cache: {}
+  prometheus-data: {}
+  grafana-data: {}
+  loki-data: {}
+  tempo-data: {}

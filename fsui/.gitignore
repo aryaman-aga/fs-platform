@@ -1,0 +1,2 @@
+# e2e run state (pids, temp dir, demo credentials of the throw-away tenant)
+e2e/.e2e-state.json

@@ -1,0 +1,46 @@
+- name: Checkout the tagged release
+  ansible.builtin.git:
+    repo: "{{ fs_repo_url }}"
+    dest: "{{ fs_home }}"
+    version: "{{ fs_repo_version }}"
+    force: false
+
+- name: Environment file from the vault (secrets never in git)
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/templates/ops.env.j2"
+    dest: "{{ fs_home }}/ops/.env"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart fs-platform
+
+- name: Evidence directory for drills and reports
+  ansible.builtin.file:
+    path: "{{ fs_evidence_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Systemd unit for the compose stack
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/fs-platform.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=FS-Platform (docker compose)
+      Requires=docker.service
+      After=docker.service network-online.target
+      [Service]
+      Type=oneshot
+      RemainAfterExit=true
+      WorkingDirectory={{ fs_home }}
+      ExecStart=/usr/bin/docker compose --env-file ops/.env -f ops/docker-compose.yml {% for p in fs_compose_profiles %}--profile {{ p }} {% endfor %}up -d --build
+      ExecStop=/usr/bin/docker compose --env-file ops/.env -f ops/docker-compose.yml down
+      [Install]
+      WantedBy=multi-user.target
+  notify: Restart fs-platform
+
+- name: FS-Platform enabled
+  ansible.builtin.systemd:
+    name: fs-platform
+    enabled: true
+    daemon_reload: true

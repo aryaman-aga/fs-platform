@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fscore"
+version = "1.0.0"
+description = "FS-Platform engine: Ind AS financial statement preparation (Module P) and review (Module R)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+  "openpyxl>=3.1",
+  "lxml>=5.0",
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+  "rich>=13",
+  "rapidfuzz>=3.0",
+  "xlsxwriter>=3.2",
+  "jinja2>=3.1",
+  "pymupdf>=1.24",
+  "reportlab>=4.0",
+  "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+ai = ["anthropic>=1.0", "keyring>=25"]
+win = ["pywin32>=306; sys_platform == 'win32'"]
+dev = ["pytest>=8", "hypothesis>=6", "pytest-cov", "ruff", "mypy", "types-PyYAML", "types-python-dateutil", "lxml-stubs"]
+
+[project.scripts]
+fscheck = "fscore.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fscore = ["rules/*.yaml", "ai/prompts/*.md", "ai/eval/*", "ai/*.md", "report/templates/*", "prepare/data/*", "prepare/data/**/*", "narrative/data/*", "data/*", "pdf/fonts/*", "py.typed"]

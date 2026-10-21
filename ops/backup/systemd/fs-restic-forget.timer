@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily restic retention (03:30 IST)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

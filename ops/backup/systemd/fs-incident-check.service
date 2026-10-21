@@ -1,0 +1,10 @@
+[Unit]
+Description=FS-Platform CERT-In incident deadline reminders
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Environment=FS_HOME=/opt/fs-platform
+ExecStart=/opt/fs-platform/ops/backup/compliance-job.sh incident-check
+Nice=10

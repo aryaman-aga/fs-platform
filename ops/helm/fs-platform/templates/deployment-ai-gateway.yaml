@@ -1,0 +1,54 @@
+{{- if .Values.aiGateway.enabled }}
+# The ONLY workload with internet egress (decision D6 / ADR-0020); see networkpolicy.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-ai-gateway
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ai-gateway
+spec:
+  replicas: {{ .Values.aiGateway.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fs-platform.selector" . | nindent 6 }}
+      app.kubernetes.io/component: ai-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "fs-platform.selector" . | nindent 8 }}
+        app.kubernetes.io/component: ai-gateway
+        fs-platform/egress: ai-provider
+    spec:
+      serviceAccountName: {{ include "fs-platform.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: ai-gateway
+          image: {{ include "fs-platform.image" (list . .Values.image.api) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "fsweb.worker", "--queues", "ai-gateway"]
+          envFrom:
+            {{- include "fs-platform.envFrom" . | nindent 12 }}
+          env:
+            {{- include "fs-platform.secretEnv" . | nindent 12 }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: ANTHROPIC_API_KEY
+                  optional: true
+          resources:
+            {{- toYaml .Values.aiGateway.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: work, mountPath: /work }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
+        - name: work
+          emptyDir: { sizeLimit: 1Gi }
+{{- end }}

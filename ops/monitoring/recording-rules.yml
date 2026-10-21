@@ -1,0 +1,32 @@
+# SLI recording rules (E-OPS-01). Long-lived streams (SSE run progress) are excluded from latency.
+groups:
+  - name: fs-sli
+    interval: 30s
+    rules:
+      - record: fs:api_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(fsweb_http_request_seconds_bucket{route!~".*/events$|/metrics"}[5m])))
+      - record: fs:run_duration_seconds:p95_1h
+        expr: histogram_quantile(0.95, sum by (le, kind) (rate(fsweb_run_duration_seconds_bucket[1h])))
+      - record: fs:api_error_ratio:rate5m
+        expr: |
+          sum(rate(fsweb_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(fsweb_http_requests_total[5m])), 1e-9)
+      - record: fs:api_error_ratio:rate30m
+        expr: |
+          sum(rate(fsweb_http_requests_total{status=~"5.."}[30m]))
+            / clamp_min(sum(rate(fsweb_http_requests_total[30m])), 1e-9)
+      - record: fs:api_error_ratio:rate1h
+        expr: |
+          sum(rate(fsweb_http_requests_total{status=~"5.."}[1h]))
+            / clamp_min(sum(rate(fsweb_http_requests_total[1h])), 1e-9)
+      - record: fs:api_error_ratio:rate6h
+        expr: |
+          sum(rate(fsweb_http_requests_total{status=~"5.."}[6h]))
+            / clamp_min(sum(rate(fsweb_http_requests_total[6h])), 1e-9)
+      # Availability over 30 days for the error-budget panel (SLO 99.5 %).
+      - record: fs:api_availability:ratio30d
+        expr: |
+          1 - (sum(increase(fsweb_http_requests_total{status=~"5.."}[30d]))
+               / clamp_min(sum(increase(fsweb_http_requests_total[30d])), 1))

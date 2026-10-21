@@ -1,0 +1,54 @@
+# Workspace-level tool configuration. The installable packages live in
+# fscore/ (engine) and fsweb/ (web platform); each has its own pyproject.toml.
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["fsui", "node_modules", ".venv", "var"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "C4", "PIE", "PT"]
+ignore = [
+  "S101",   # assert is fine in tests
+  "S311",   # random is used for synthetic data, not crypto
+  "RUF001", "RUF002", "RUF003",  # ₹ and typographic characters are intentional
+  "B008",   # FastAPI Depends() in defaults
+  "PT011",
+  "SIM108",
+  "E501",
+  "UP042",  # explicit (str, Enum) keeps str() stable for audit records
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/*" = ["S", "B011", "PT006", "PT007", "PT018"]
+"tools/*" = ["S"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fscore", "fsweb", "fsoffline", "fsrender_win"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["fscore.*"]
+strict = true
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+markers = [
+  "slow: long-running tests (performance, soak)",
+  "postgres: needs a PostgreSQL server (FSWEB_TEST_PG_URL)",
+  "libreoffice: needs LibreOffice (soffice) on PATH or in /Applications",
+  "private: needs real client fixtures in fixtures/private (never in CI)",
+  "engine: integration test that drives the real engine end to end",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning:openpyxl.*",
+  "ignore:The `fitz` API is deprecated:FutureWarning",
+  "ignore:builtin type Swig.*:DeprecationWarning",
+  "ignore:builtin type swig.*:DeprecationWarning",
+]

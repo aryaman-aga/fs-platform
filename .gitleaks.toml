@@ -1,0 +1,12 @@
+# Secret scanning (gitleaks, CI security job): the default rules, plus an allowlist for the two synthetic
+# credentials that are part of the code base on purpose. Neither is valid outside a local development
+# database: the demo password is only seeded by `fsweb.manage seed-demo`, which refuses to run in
+# production or offline mode, and the test password exists only in the pytest fixtures.
+title = "fs-platform"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic demo and test credentials"
+regexes = ['''Demo-Ledger!2026-fs''', '''Correct-Horse-Ledger-2026''']

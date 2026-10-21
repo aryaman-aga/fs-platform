@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>{{ title }}</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #5b6475; --line: #dde1e8;
+  --high: #b42318; --high-bg: #fde8e7; --medium: #9a5b00; --medium-bg: #fff1d6;
+  --low: #6b5d00; --low-bg: #fff9d1; --info: #475467; --info-bg: #eef1f5; --accent: #1f3a5f; --ok: #146c2e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #12151b; --panel: #1b2029; --ink: #e6e9ef; --muted: #a3acbb; --line: #2c3340;
+    --high: #ff8a80; --high-bg: #3a1d1c; --medium: #ffc46b; --medium-bg: #3a2c12; --low: #e8d76a; --low-bg: #343012;
+    --info: #c0c8d6; --info-bg: #262c37; --accent: #8fb3e0; --ok: #7bd88f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 32px 0 10px; color: var(--accent); }
+.meta { color: var(--muted); font-size: 12.5px; word-break: break-all; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.card .n { font-size: 26px; font-weight: 700; } .card .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.card.high .n { color: var(--high); } .card.medium .n { color: var(--medium); } .card.low .n { color: var(--low); } .card.info .n { color: var(--info); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 8px; background: var(--accent); border-radius: 4px; min-width: 2px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.high { color: var(--high); background: var(--high-bg); } .pill.medium { color: var(--medium); background: var(--medium-bg); }
+.pill.low { color: var(--low); background: var(--low-bg); } .pill.info { color: var(--info); background: var(--info-bg); }
+details.finding { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--info); border-radius: 6px; margin: 8px 0; }
+details.finding.high { border-left-color: var(--high); } details.finding.medium { border-left-color: var(--medium); } details.finding.low { border-left-color: var(--low); }
+details.finding summary { cursor: pointer; padding: 9px 12px; list-style: none; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+details.finding summary::-webkit-details-marker { display: none; }
+details.finding .body { padding: 4px 12px 12px; }
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 4px 12px; margin: 6px 0 10px; }
+.kv div:nth-child(odd) { color: var(--muted); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+.flag { background: var(--medium-bg); }
+.ok { color: var(--ok); font-weight: 600; } .bad { color: var(--high); font-weight: 600; }
+.muted { color: var(--muted); }
+footer { margin-top: 36px; color: var(--muted); font-size: 12px; }
+@media print { details.finding { break-inside: avoid; } details.finding[open] summary ~ * { display: block; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>{{ title }}</h1>
+  <div class="meta">File <span class="mono">{{ run.file_name }}</span> · SHA-256 <span class="mono">{{ run.file_sha256 }}</span></div>
+  <div class="meta">Engine {{ run.engine_version }} · Rule set {{ run.rule_set_version }} (<span class="mono">{{ run.rule_set_hash[:12] }}</span>) · Config <span class="mono">{{ run.config_hash[:12] }}</span> · Generated {{ generated }}</div>
+</header>
+
+<section class="cards" aria-label="Summary">
+  {% for s in severities %}
+  <div class="card {{ s|lower }}"><div class="n">{{ counts.get(s, 0) }}</div><div class="l">{{ s }} findings</div></div>
+  {% endfor %}
+  <div class="card"><div class="n">{{ auto }}</div><div class="l">Auto-fixable</div></div>
+  <div class="card"><div class="n">{{ needs_approval }}</div><div class="l">Need approval</div></div>
+  <div class="card"><div class="n">{{ manual }}</div><div class="l">Manual</div></div>
+  <div class="card"><div class="n {{ 'bad' if reprint else 'ok' }}">{{ 'Yes' if reprint else 'No' }}</div><div class="l">PDF must be re-printed</div></div>
+  <div class="card"><div class="n">{{ '%.1f'|format(run.selftest.match_rate * 100) }}%</div><div class="l">Evaluator self-test</div></div>
+</section>
+
+{% if by_rule %}
+<h2>Findings by rule</h2>
+<div class="panel"><table>
+  <thead><tr><th>Rule</th><th class="num">Count</th><th style="width:55%"></th></tr></thead>
+  <tbody>
+  {% for r in by_rule %}
+  <tr><td class="mono">{{ r.rule }}</td><td class="num">{{ r.n }}</td><td><div class="bar" style="width: {{ r.pct }}%"></div></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+{% if key_rows %}
+<h2>Key figures</h2>
+<div class="panel"><table>
+  <thead><tr><th>Figure</th><th>Period</th><th class="num">Printed</th><th class="num">After fix</th><th>Cell</th></tr></thead>
+  <tbody>
+  {% for k in key_rows %}
+  <tr class="{{ 'flag' if k.moved else '' }}"><td>{{ k.kf.label }}</td><td>{{ k.kf.period }}</td><td class="num">{{ k.kf.printed or '' }}</td><td class="num">{{ k.after if k.moved else '–' }}</td><td class="mono">{{ k.kf.ref if k.kf.ref else '' }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<h2>Findings ({{ findings|length }})</h2>
+{% if not findings %}<div class="panel ok">No findings.</div>{% endif %}
+{% for item in findings %}
+{% set f = item.f %}
+<details class="finding {{ item.sev_class }}"{% if f.severity.value == 'High' and loop.index <= 25 %} open{% endif %}>
+  <summary>
+    <span class="pill {{ item.sev_class }}">{{ f.severity.value }}</span>
+    <span class="mono">#{{ item.n }} {{ f.rule_id }}</span>
+    <span>{{ f.category }}</span>
+    <span class="muted">{{ item.statement }}{% if f.sheet %} · <span class="mono">{{ f.sheet }}!{{ f.cells|join(', ') }}</span>{% endif %}</span>
+  </summary>
+  <div class="body">
+    <p>{{ f.explanation }}</p>
+    <div class="kv">
+      {% if f.caption %}<div>Caption</div><div>{{ f.caption }}</div>{% endif %}
+      {% if f.printed %}<div>As printed</div><div class="mono">{{ f.printed }}</div>{% endif %}
+      {% if f.expected %}<div>Should be</div><div class="mono">{{ f.expected }}</div>{% endif %}
+      {% if f.difference is not none %}<div>Difference</div><div class="mono">{{ f.difference|amount }}</div>{% endif %}
+      {% if f.period %}<div>Period</div><div>{{ f.period }}</div>{% endif %}
+      <div>Certainty</div><div>{{ f.certainty.value }}</div>
+      <div>Fix</div><div>{{ f.fix_kind.value }} — {{ item.status }}</div>
+      {% if f.suggested_fix %}<div>Suggested fix</div><div>{{ f.suggested_fix }}</div>{% endif %}
+      {% if f.pages_in_pdf %}<div>PDF pages</div><div>{{ f.pages_in_pdf|join(', ') }}</div>{% endif %}
+    </div>
+    {% if f.evidence %}
+    <table>
+      <thead><tr><th>Evidence</th><th>Cell</th><th class="num">Printed</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for ev in f.evidence %}
+      <tr><td>{{ ev.label }}</td><td class="mono">{{ ev.ref if ev.ref else '' }}</td><td class="num">{{ ev.printed or '' }}</td><td>{{ ev.note or '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</details>
+{% endfor %}
+
+{% if plan %}
+<h2>Fix plan</h2>
+<div class="panel">
+  <div class="kv">
+    <div>Policy</div><div>{{ plan.policy }}</div>
+    <div>Plan SHA-256</div><div class="mono">{{ plan.plan_sha256 }}</div>
+    <div>Edits</div><div>{{ plan.edits|length }}</div>
+    <div>Fixed point</div><div>{{ 'reached' if plan.converged else 'NOT reached after ' ~ plan.passes ~ ' passes' }}</div>
+    {% if applied %}<div>Post-write verification</div><div class="{{ 'ok' if applied.verification.ok else 'bad' }}">{{ 'Passed' if applied.verification.ok else 'FAILED' }}</div>{% endif %}
+  </div>
+  {% if edits %}
+  <table>
+    <thead><tr><th>Edit</th><th>Group</th><th>Cell</th><th>Old</th><th>New</th><th>Reason</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for row in edits %}{% set e = row.e %}
+    <tr><td class="mono">{{ e.id }}</td><td>{{ e.group.value }}</td><td class="mono">{{ e.sheet }}!{{ e.cell }}</td>
+      <td class="mono">{% if e.old_formula %}={{ e.old_formula }}{% else %}{{ e.old_value or '' }}{% endif %}</td>
+      <td class="mono">{% if e.new_formula %}={{ e.new_formula }}{% else %}{{ e.new_value or '' }}{% endif %}</td>
+      <td>{{ e.reason }}</td><td>{{ row.status }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if plan.balancing %}
+  <h3>Balancing adjustments</h3>
+  <table>
+    <thead><tr><th>Statement</th><th>Column</th><th>Period</th><th class="num">Gap</th><th class="num">Adjustment</th><th>Target</th><th>Status</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for b in plan.balancing %}
+    <tr><td>{{ b.statement }}</td><td>{{ b.column }}</td><td>{{ b.period or '' }}</td><td class="num">{{ b.gap|amount }}</td><td class="num">{{ b.adjustment|amount }}</td><td class="mono">{{ b.target if b.target else '' }}</td><td>{{ b.status }}</td><td>{{ b.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if plan.unresolved %}
+  <h3>Unresolved</h3>
+  <ul>{% for u in plan.unresolved %}<li>{{ u }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if moves %}
+<h2>Printed figures moved ({{ moves|length }})</h2>
+<div class="panel"><table>
+  <thead><tr><th>Cell</th><th>Caption</th><th>Period</th><th class="num">Before</th><th class="num">After</th><th>Flags</th></tr></thead>
+  <tbody>
+  {% for m in moves %}
+  <tr class="{{ 'flag' if m.is_py or m.is_key else '' }}"><td class="mono">{{ m.sheet }}!{{ m.cell }}</td><td>{{ m.caption or '' }}</td><td>{{ m.period or '' }}</td><td class="num">{{ m.before or '' }}</td><td class="num">{{ m.after or '' }}</td><td>{% if m.is_py %}PY {% endif %}{% if m.is_key %}Key figure{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<h2>Re-print list</h2>
+<div class="panel">
+  {% if reprint %}
+  <p class="bad">The signed PDF must be re-printed.</p>
+  {% if reprint_pages %}<p>PDF pages: {{ reprint_pages|join(', ') }}</p>{% endif %}
+  {% if reprint_sheets %}<p>Sheets whose printed figures change: {{ reprint_sheets|join(', ') }}</p>{% endif %}
+  {% else %}
+  <p class="ok">Nothing to re-print.</p>
+  {% endif %}
+</div>
+
+{% if result.pdf %}
+<h2>PDF reconciliation</h2>
+<div class="panel">
+  <div class="kv">
+    <div>PDF SHA-256</div><div class="mono">{{ result.pdf.pdf_sha256 }}</div>
+    <div>Pages</div><div>{{ result.pdf.pages }}</div>
+    <div>Values checked</div><div>{{ result.pdf.values_checked }}</div>
+    <div>Values missing</div><div class="{{ 'bad' if result.pdf.misses else 'ok' }}">{{ result.pdf.misses|length }}</div>
+    <div>Stale</div><div class="{{ 'bad' if result.pdf.stale else 'ok' }}">{{ 'Yes' if result.pdf.stale else 'No' }}</div>
+  </div>
+  {% if result.pdf.misses %}
+  <table>
+    <thead><tr><th>Sheet</th><th>Cell</th><th>Caption</th><th class="num">Workbook value</th><th>Pages</th></tr></thead>
+    <tbody>
+    {% for m in result.pdf.misses %}
+    <tr><td>{{ m.sheet }}</td><td class="mono">{{ m.cell }}</td><td>{{ m.caption or '' }}</td><td class="num">{{ m.printed }}</td><td>{{ m.pages|join(', ') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% for t in result.pdf.error_tokens %}<p class="bad">{{ t }}</p>{% endfor %}
+  {% for t in result.pdf.text_mismatches %}<p>{{ t }}</p>{% endfor %}
+</div>
+{% endif %}
+
+{% if result.xref_map %}
+<h2>Cross-reference map ({{ result.xref_map|length }})</h2>
+<div class="panel"><table>
+  <thead><tr><th>Cell A</th><th>Caption A</th><th class="num">Printed A</th><th>Cell B</th><th>Caption B</th><th class="num">Printed B</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for p in result.xref_map %}
+  <tr><td class="mono">{{ p.a }}</td><td>{{ p.caption_a }}</td><td class="num">{{ p.printed_a or '' }}</td><td class="mono">{{ p.b }}</td><td>{{ p.caption_b }}</td><td class="num">{{ p.printed_b or '' }}</td><td>{{ p.status }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<h2>Run information</h2>
+<div class="panel">
+  <div class="kv">
+    <div>Started</div><div>{{ run.started_at }}</div>
+    <div>Duration</div><div>{{ '%.1f'|format(run.duration_s) }} s</div>
+    <div>Sheets / cells read</div><div>{{ run.sheets }} / {{ run.cells_read }}</div>
+    <div>Print sheets</div><div>{{ run.print_sheets|join(', ') }}</div>
+    <div>Self-test</div><div>{{ run.selftest.matched }} of {{ run.selftest.evaluated }} formulas match Excel's cached values ({{ run.selftest.unsupported }} unsupported, {{ run.selftest.missing_cache }} without cached value)</div>
+  </div>
+  {% for w in run.warnings %}<p class="muted">⚠ {{ w }}</p>{% endfor %}
+</div>
+
+<footer>Generated offline by FS-Platform fscore {{ engine_version }}. This report contains confidential client information.</footer>
+</main>
+</body>
+</html>

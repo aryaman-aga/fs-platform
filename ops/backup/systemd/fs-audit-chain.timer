@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly audit-chain verification (23:50 IST)
+
+[Timer]
+OnCalendar=*-*-* 23:50:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

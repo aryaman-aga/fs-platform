@@ -1,0 +1,5 @@
+- name: Restart fs-platform
+  ansible.builtin.systemd:
+    name: fs-platform
+    state: restarted
+    daemon_reload: true

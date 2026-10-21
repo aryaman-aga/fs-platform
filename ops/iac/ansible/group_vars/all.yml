@@ -1,0 +1,11 @@
+# Non-secret settings. Secrets (ops/.env, restic passwords) come from ansible-vault files that are
+# never committed: group_vars/vault.yml (encrypted).
+fs_home: /opt/fs-platform
+fs_repo_url: "https://git.example-firm.in/fs-platform.git"
+fs_repo_version: "v1.0.0"            # deploy tagged releases only (E-ITGC-01)
+fs_compose_profiles: ["monitoring", "backup"]
+fs_admin_users: ["fsadmin"]
+ntp_servers: ["samay1.nic.in", "samay2.nic.in", "time.nplindia.org"]   # CERT-In: NIC / NPL time
+unattended_upgrades: true
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile
+fs_evidence_dir: /var/lib/fs-platform/evidence

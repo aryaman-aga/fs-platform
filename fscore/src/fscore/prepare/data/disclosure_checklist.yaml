@@ -1,0 +1,38 @@
+# Disclosure checklist (E-PREP-02) — Schedule III Division II + key Ind AS items, as data.
+# detect: how the engine answers automatically ("text" = a printed text cell matches the regex;
+#         "sheet" = a print sheet with that name exists; "ratio_reasons" = every > 25 % ratio
+#         variance carries a reason; "manual" = the preparer answers).
+# mandatory: an unanswered or "no" answer blocks FINAL.
+framework: schedule-iii-div2 + ind-as
+version: "2026.10.1"
+items:
+  - {code: SCH3-BS-FORMAT, area: Presentation, question: "Balance Sheet presented in the Schedule III Division II format", detect: {text: "TOTAL EQUITY AND LIABILITIES"}, mandatory: true}
+  - {code: SCH3-PL-FORMAT, area: Presentation, question: "Statement of profit and loss with OCI and EPS", detect: {text: "Total comprehensive income"}, mandatory: true}
+  - {code: SCH3-SOCE, area: Presentation, question: "Statement of changes in equity presented", detect: {sheet: "SOCIE"}, mandatory: true}
+  - {code: INDAS7-CF, area: Cash flow, question: "Cash flow statement (indirect method) presented", detect: {text: "Cash flow from operating activities"}, mandatory: true}
+  - {code: INDAS7-44A, area: Cash flow, question: "Changes in liabilities arising from financing activities disclosed", detect: {text: "arising from financing activities"}, mandatory: true}
+  - {code: INDAS1-POLICIES, area: Policies, question: "Material accounting policy information disclosed", detect: {text: "material accounting polic"}, mandatory: true}
+  - {code: INDAS1-GC, area: Going concern, question: "Going concern assessment and mitigating factors disclosed where relevant", detect: {text: "going concern"}, mandatory: true}
+  - {code: SCH3-TR-AGEING, area: Receivables, question: "Trade receivables ageing schedule", detect: {text: "Trade receivables ageing schedule"}, mandatory: true}
+  - {code: SCH3-TP-AGEING, area: Payables, question: "Trade payables ageing schedule", detect: {text: "Trade payables ageing schedule"}, mandatory: true}
+  - {code: SCH3-MSME, area: Payables, question: "MSMED Act disclosures", detect: {text: "MSMED Act"}, mandatory: true}
+  - {code: SCH3-PROMOTERS, area: Equity, question: "Shareholding of promoters", detect: {text: "held by promoters"}, mandatory: true}
+  - {code: SCH3-SHAREHOLDERS-5PC, area: Equity, question: "Shareholders holding more than 5 % of shares", detect: {text: "more than 5%"}, mandatory: true}
+  - {code: SCH3-RATIOS, area: Ratios, question: "Schedule III ratios with explanations for variances above 25 %", detect: {ratio_reasons: true}, mandatory: true}
+  - {code: INDAS12-RECON, area: Tax, question: "Reconciliation of tax expense and accounting profit", detect: {text: "Reconciliation of tax expense"}, mandatory: true}
+  - {code: INDAS19-DBO, area: Employee benefits, question: "Defined benefit obligation movement and assumptions", detect: {text: "defined benefit obligation"}, mandatory: true}
+  - {code: INDAS24-RPT, area: Related parties, question: "Related parties, relationships, transactions and balances", detect: {text: "Names of related parties"}, mandatory: true}
+  - {code: INDAS33-EPS, area: EPS, question: "Basic and diluted EPS with weighted shares", detect: {text: "Weighted average number of equity shares"}, mandatory: true}
+  - {code: INDAS107-CATEGORIES, area: Financial instruments, question: "Categories of financial instruments", detect: {text: "Categories of financial instruments"}, mandatory: true}
+  - {code: INDAS115-DISAGG, area: Revenue, question: "Disaggregation of revenue and contract balances", detect: {text: "Disaggregation of revenue"}, mandatory: true}
+  - {code: INDAS116-MATURITY, area: Leases, question: "Lease liability maturity analysis", detect: {text: "Maturity analysis"}, mandatory: true}
+  - {code: INDAS37-CONTINGENT, area: Contingencies, question: "Contingent liabilities and commitments", detect: {text: "Contingent liabilities"}, mandatory: true}
+  - {code: INDAS10-EVENTS, area: Events, question: "Events after the reporting period and approval date", detect: {text: "approved for issue"}, mandatory: true}
+  - {code: SCH3-CWIP-AGEING, area: PPE, question: "CWIP ageing / completion schedule (Schedule III)", detect: manual, mandatory: true}
+  - {code: SCH3-TITLE-DEEDS, area: PPE, question: "Title deeds of immovable property not held in the name of the company", detect: manual, mandatory: true}
+  - {code: SCH3-BENAMI, area: Regulatory, question: "Proceedings under the Benami Transactions (Prohibition) Act", detect: manual, mandatory: true}
+  - {code: SCH3-WILFUL-DEFAULTER, area: Regulatory, question: "Wilful defaulter declaration", detect: manual, mandatory: true}
+  - {code: SCH3-STRUCK-OFF, area: Regulatory, question: "Relationship with struck-off companies", detect: manual, mandatory: true}
+  - {code: SCH3-CRYPTO, area: Regulatory, question: "Crypto currency or virtual currency held / traded", detect: manual, mandatory: true}
+  - {code: SCH3-UNDISCLOSED-INCOME, area: Regulatory, question: "Undisclosed income surrendered in tax assessments", detect: manual, mandatory: true}
+  - {code: SEC135-CSR, area: CSR, question: "Corporate social responsibility (applicability under section 135 and spend)", detect: manual, mandatory: false}

@@ -1,0 +1,160 @@
+# FS-Platform CI (09 §3, E-SEC-12). Draft — the lead finalises job commands as the packages settle.
+# Real client fixtures are never available here: tests marked `private` are excluded (ADR-0021).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PGPASSWORD: postgres
+      FSWEB_TEST_PG_URL: postgresql+psycopg://fsweb_owner:fsweb_owner@127.0.0.1:5432/fsweb_test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Database roles (owner for migrations, RLS-enforced runtime role)
+        run: |
+          psql -h 127.0.0.1 -U postgres -c "CREATE ROLE fsweb_owner LOGIN PASSWORD 'fsweb_owner' CREATEDB;"
+          psql -h 127.0.0.1 -U postgres -c "CREATE ROLE fsweb_app LOGIN PASSWORD 'fsweb_app';"
+          psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE fsweb_test OWNER fsweb_owner;"
+      - name: Install packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "fscore[dev,ai]" -e "fsweb[dev]" -e fsrender-win -e fsoffline
+          pip install pytest pytest-xdist hypothesis ruff mypy types-PyYAML types-python-dateutil lxml-stubs pyyaml
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Type check (mypy --strict on the engine)
+        run: mypy fscore/src
+      - name: Tests
+        run: >-
+          pytest -n auto -m "not slow and not private and not libreoffice"
+          fscore/tests fsweb/tests tools/tests fsrender-win/tests fsoffline/tests ops/tests
+
+  libreoffice:
+    name: render with LibreOffice
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: LibreOffice and metric-compatible fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-calc fonts-crosextra-carlito \
+            fonts-crosextra-caladea fonts-liberation fonts-dejavu-core fonts-noto-core
+      - run: pip install -e "fscore[dev]" pytest
+      - name: LibreOffice render and recalculation tests
+        run: pytest -m libreoffice fscore/tests
+
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fsui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"  # Node 20+ supported; 20 reached end of life in April 2026 (ADR-0019)
+          cache: npm
+          cache-dependency-path: fsui/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: Python packages for the smoke tests (Playwright's global setup starts the API, worker and UI itself)
+        working-directory: .
+        run: pip install -e fscore -e fsweb
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          FSUI_PYTHON: python  # CI installs into the runner's Python, not .venv
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: fsui/playwright-report
+
+  security:
+    name: security scans and SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install
+        run: |
+          pip install -e fscore -e fsweb pip-audit bandit cyclonedx-bom
+          cd fsui && npm ci
+      - name: Python dependency audit
+        run: pip-audit --skip-editable
+      - name: npm audit (high and critical)
+        run: cd fsui && npm audit --audit-level=high
+      - name: SAST (Bandit)
+        run: bandit -r fscore/src fsweb/src -ll -q
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Filesystem vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM (CycloneDX)
+        run: |
+          mkdir -p sbom
+          cyclonedx-py environment -o sbom/sbom-python.json
+          cd fsui && npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom/sbom-npm.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom/

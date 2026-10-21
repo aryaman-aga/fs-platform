@@ -1,0 +1,1042 @@
+{
+  "workbook": "fixtures/synthetic/corvus_all_errors_annual.xlsx",
+  "seed": 7,
+  "exact": false,
+  "layout": "annual",
+  "injections": [
+    "actuarial_split",
+    "ageing_total_missing",
+    "ageing_vs_note",
+    "bs_not_tally",
+    "caption_closing_additions",
+    "caption_duplicate_numbering",
+    "caption_misspelt_designation",
+    "caption_proceeds_outflow",
+    "caption_stale_year",
+    "cf_closing_plug",
+    "cf_components_inconsistent",
+    "cf_fx_gap",
+    "crosscast_down",
+    "din_mismatch",
+    "din_placeholder",
+    "dt_sign_convention",
+    "eps_cy_equals_py",
+    "expense_vs_actuarial",
+    "fi_table_incomplete",
+    "format_inconsistency",
+    "gc_group_wording",
+    "gc_hidden_factors",
+    "gc_one_decimal",
+    "gc_period_scope",
+    "gc_rounding_mismatch",
+    "gc_sign_wording",
+    "gc_stale_figure",
+    "gc_tax_note_contradiction",
+    "header_row_data",
+    "hidden_row_in_total",
+    "ind_as_115_basis",
+    "narrative_wrong_provision",
+    "pat_points_at_tci",
+    "plug02_large_adjustments",
+    "plug_hides_difference",
+    "plug_round_sum",
+    "plug_total_minus",
+    "ppe_stale_june_row",
+    "py_formula_refs_cy",
+    "ratio_avg_twice",
+    "ratio_no_reason",
+    "ratio_roce_pbt",
+    "ref_error_hidden_row",
+    "roll_omits_movement",
+    "rpt_duplicate_stale",
+    "rpt_equity_not_disclosed",
+    "rpt_gross_vs_net",
+    "rpt_hidden_row",
+    "rpt_interest_mismatch",
+    "rpt_omitted_balance",
+    "rpt_stale_caption",
+    "rpt_wrong_counterparty",
+    "rpt_wrong_relationship",
+    "same_figure_two_values",
+    "share_count_double",
+    "shareholding_pct_basis",
+    "signing_date_implausible",
+    "subtotal_not_cast",
+    "typed_total",
+    "unsafe_hide_column",
+    "white_font_working"
+  ],
+  "gaps": {
+    "bs": {
+      "CY": "7.02",
+      "PY": "-469.05"
+    },
+    "cf": {
+      "CY": "-0.04",
+      "PY": "0.00"
+    }
+  },
+  "protected_cells": [
+    [
+      "Note 6-11",
+      "B17"
+    ]
+  ],
+  "expected": [
+    {
+      "rule_id": "CAST-03",
+      "sheet": "Note 6-11",
+      "cells": [
+        "F55",
+        "G55"
+      ],
+      "note": "[ageing_total_missing] blank total cells under populated buckets",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "SUB-01",
+      "sheet": "Note 6-11",
+      "cells": [
+        "H55"
+      ],
+      "note": "[ageing_total_missing] ageing total \u2260 gross trade receivables; [ageing_vs_note] ageing total \u2260 note gross",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-04",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A9",
+        "A10",
+        "A11",
+        "A12"
+      ],
+      "note": "[gc_hidden_factors] mitigating factors hidden",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "HID-01",
+      "sheet": "Note 14-19",
+      "cells": [
+        "B52",
+        "C52"
+      ],
+      "note": "[hidden_row_in_total] hidden row 49 contributes to the printed total",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "MULTI-03",
+      "sheet": "Note 3-5",
+      "cells": [
+        "A13"
+      ],
+      "note": "[ppe_stale_june_row] intermediate-date row in a roll-forward",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-02",
+      "sheet": "RPT",
+      "cells": [
+        "A43"
+      ],
+      "note": "[rpt_duplicate_stale] duplicate party (Pvt. Ltd. vs Private Limited) with stale CY = PY",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-09",
+      "sheet": "RPT",
+      "cells": [
+        "A42",
+        "B42",
+        "C42"
+      ],
+      "note": "[rpt_duplicate_stale] balance double counted vs TB",
+      "severity": "High",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "RPT-03",
+      "sheet": "RPT",
+      "cells": [
+        "A25"
+      ],
+      "note": "[rpt_hidden_row] hidden RPT row with non-zero amounts",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "SUB-06",
+      "sheet": "Note 12-13",
+      "cells": [
+        "B18",
+        "C18"
+      ],
+      "note": "[share_count_double] shares \u00d7 face value \u2260 share capital (double counted subtotal)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "Note 12-13",
+      "cells": [
+        "C18"
+      ],
+      "note": "[share_count_double] reconciliation closing amount \u2260 share capital",
+      "severity": "High",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "ROLL-01",
+      "sheet": "Note 12-13",
+      "cells": [
+        "B18"
+      ],
+      "note": "[share_count_double] opening + issued \u2260 closing shares",
+      "severity": "High",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "SUB-03",
+      "sheet": "Note 14-19",
+      "cells": [
+        "B70",
+        "B73"
+      ],
+      "note": "[actuarial_split] DBO \u2260 current + non-current provision",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "BAL-01",
+      "sheet": "BS",
+      "cells": [
+        "C25",
+        "C52"
+      ],
+      "note": "[bs_not_tally] total assets exceed equity and liabilities by 0.01",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-01",
+      "sheet": "CFS",
+      "cells": [
+        "C45"
+      ],
+      "note": "[cf_closing_plug]",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "BAL-02",
+      "sheet": "CFS",
+      "cells": [
+        "C45"
+      ],
+      "note": "[cf_closing_plug] PY CF closing \u2260 BS cash",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "CFS",
+      "cells": [
+        "C45"
+      ],
+      "note": "[cf_closing_plug]",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "CFS",
+      "cells": [
+        "B48",
+        "B49"
+      ],
+      "note": "[cf_components_inconsistent] components table \u2260 cash-note lines",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "BAL-02",
+      "sheet": "CFS",
+      "cells": [
+        "B45"
+      ],
+      "note": "[cf_fx_gap] CF closing \u2260 BS cash by 0.35 (FX on cash) \u2014 investigate, do not plug",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "ROLL-02",
+      "sheet": "Note 12-13",
+      "cells": [
+        "B38"
+      ],
+      "note": "[cf_fx_gap] CY opening reserves \u2260 PY closing (translation)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-02",
+      "sheet": "Note 3-5",
+      "cells": [
+        "E14"
+      ],
+      "note": "[crosscast_down] row total \u2260 sum of class columns",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-02",
+      "sheet": "Note 3-5",
+      "cells": [
+        "E16"
+      ],
+      "note": "[crosscast_down] downward total does not cross-cast",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TYPED-01",
+      "sheet": "Note 3-5",
+      "cells": [
+        "E14"
+      ],
+      "note": "[crosscast_down] typed total in the total column",
+      "severity": "Medium",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "ROLL-05",
+      "sheet": "Note 6-11",
+      "cells": [
+        "B27",
+        "B28"
+      ],
+      "note": "[dt_sign_convention] opening + P&L \u2212 OCI = closing",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "ROLL-05",
+      "sheet": "Note 6-11",
+      "cells": [
+        "C27",
+        "C28"
+      ],
+      "note": "[dt_sign_convention] opening + P&L \u2212 OCI = closing",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "PL",
+      "cells": [
+        "C28"
+      ],
+      "note": "[eps_cy_equals_py] CY EPS identical to PY (points at PY)",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "SUB-03",
+      "sheet": "Note 14-19",
+      "cells": [
+        "B77"
+      ],
+      "note": "[expense_vs_actuarial] actuarial expense \u2260 employee benefits note",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "SUB-08",
+      "sheet": "Note 29-34",
+      "cells": [
+        "B46"
+      ],
+      "note": "[fi_table_incomplete] non-current borrowings omitted",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-07",
+      "sheet": "Note 20-27",
+      "cells": [
+        "B21",
+        "B22"
+      ],
+      "note": "[format_inconsistency] inconsistent decimals / separators",
+      "severity": "Low",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "SUB-05",
+      "sheet": "Note 20-27",
+      "cells": [
+        "B13"
+      ],
+      "note": "[ind_as_115_basis] disaggregation total \u2260 revenue note total",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "PL",
+      "cells": [
+        "C20"
+      ],
+      "note": "[pat_points_at_tci] PAT \u2260 PBT \u2212 tax (includes OCI)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-02",
+      "sheet": "CFS",
+      "cells": [
+        "B30"
+      ],
+      "note": "[plug02_large_adjustments] -0.47 typed adjustment",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-02",
+      "sheet": "Note 12-13",
+      "cells": [
+        "C36"
+      ],
+      "note": "[plug02_large_adjustments] -0.16 typed adjustment",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-01",
+      "sheet": "CFS",
+      "cells": [
+        "B24"
+      ],
+      "note": "[plug_hides_difference] -0.03 plug hides a depreciation difference",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "CFS",
+      "cells": [
+        "B9"
+      ],
+      "note": "[plug_hides_difference] CF depreciation differs from the P&L by 0.03",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-01",
+      "sheet": "Note 20-27",
+      "cells": [
+        "C57"
+      ],
+      "note": "[plug_round_sum] -0.03 plug around ROUND(SUM())",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "Note 20-27",
+      "cells": [
+        "C57"
+      ],
+      "note": "[plug_round_sum]",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "PLUG-01",
+      "sheet": "PL",
+      "cells": [
+        "C14"
+      ],
+      "note": "[plug_total_minus] -0.01 plug inside a total",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "PL",
+      "cells": [
+        "C14"
+      ],
+      "note": "[plug_total_minus] total prints 0.01 below its lines",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "ROLL-04",
+      "sheet": "Note 12-13",
+      "cells": [
+        "C41"
+      ],
+      "note": "[py_formula_refs_cy] PY column formula points at CY cells",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RATIO-01",
+      "sheet": "Note 29-34",
+      "cells": [
+        "D20"
+      ],
+      "note": "[ratio_avg_twice] average divided by 2 twice",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RATIO-02",
+      "sheet": "Note 29-34",
+      "cells": [
+        "D25"
+      ],
+      "note": "[ratio_roce_pbt] numerator excludes finance costs",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "HID-02",
+      "sheet": "Note 14-19",
+      "cells": [
+        "B116"
+      ],
+      "note": "[ref_error_hidden_row] #REF! in hidden row",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "ROLL-01",
+      "sheet": "Note 14-19",
+      "cells": [
+        "B42"
+      ],
+      "note": "[roll_omits_movement] opening + movements \u2260 closing (additions omitted)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-09",
+      "sheet": "RPT",
+      "cells": [
+        "B22"
+      ],
+      "note": "[rpt_gross_vs_net] gross vs net mismatch with the P&L / TB",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-04",
+      "sheet": "RPT",
+      "cells": [
+        "B24"
+      ],
+      "note": "[rpt_interest_mismatch] RPT interest \u2260 finance costs note",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-09",
+      "sheet": "RPT",
+      "cells": [
+        "B24"
+      ],
+      "note": "[rpt_interest_mismatch] RPT \u2260 TB",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-05",
+      "sheet": "RPT",
+      "cells": [
+        "A46",
+        "A47",
+        "B47",
+        "C47"
+      ],
+      "note": "[rpt_interest_mismatch] loan roll-forward off by the interest error",
+      "severity": "Medium",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "SOCIE",
+      "cells": [
+        "D8"
+      ],
+      "note": "[same_figure_two_values] profit in SOCE \u2260 P&L profit (PY)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "SOCIE",
+      "cells": [
+        "D12"
+      ],
+      "note": "[same_figure_two_values] SOCE retained earnings \u2260 other equity note (PY)",
+      "severity": "High",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "XREF-03",
+      "sheet": "SOCIE",
+      "cells": [
+        "D17"
+      ],
+      "note": "[same_figure_two_values] SOCE retained earnings \u2260 other equity note (CY)",
+      "severity": "High",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "SUB-07",
+      "sheet": "Note 12-13",
+      "cells": [
+        "C29"
+      ],
+      "note": "[shareholding_pct_basis] same holding, different %",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "Note 14-19",
+      "cells": [
+        "C121"
+      ],
+      "note": "[subtotal_not_cast] subtotal prints 0.01 more than its printed lines",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TYPED-01",
+      "sheet": "Note 14-19",
+      "cells": [
+        "C115"
+      ],
+      "note": "[typed_total] total typed as a constant",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "MULTI-01",
+      "sheet": "Note 14-19",
+      "cells": [
+        "F6"
+      ],
+      "note": "[unsafe_hide_column] out-of-scope column",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "MULTI-02",
+      "sheet": "Note 14-19",
+      "cells": [
+        "F"
+      ],
+      "note": "[unsafe_hide_column] column F also holds the trade-payables ageing bucket",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "HID-02",
+      "sheet": "Note 6-11",
+      "cells": [
+        "D65"
+      ],
+      "note": "[white_font_working] white font working figure in print area",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-04",
+      "sheet": "Note 3-5",
+      "cells": [
+        "A36"
+      ],
+      "note": "[caption_closing_additions] closing row captioned as a movement",
+      "severity": "Low",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-03",
+      "sheet": "Note 6-11",
+      "cells": [
+        "A14"
+      ],
+      "note": "[caption_duplicate_numbering] duplicate sub-item numbering",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-01",
+      "sheet": "SOCIE",
+      "cells": [
+        "D28"
+      ],
+      "note": "[caption_misspelt_designation] misspelt designation",
+      "severity": "Low",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-04",
+      "sheet": "CFS",
+      "cells": [
+        "A29"
+      ],
+      "note": "[caption_proceeds_outflow] 'Proceeds' caption with an outflow",
+      "severity": "Low",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-02",
+      "sheet": "Note 20-27",
+      "cells": [
+        "A72"
+      ],
+      "note": "[caption_stale_year] stale year in caption",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-01",
+      "sheet": "PL",
+      "cells": [
+        "D41"
+      ],
+      "note": "[din_mismatch] two directors share one DIN",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-01",
+      "sheet": "CFS",
+      "cells": [
+        "C64",
+        "B67"
+      ],
+      "note": "[din_placeholder] placeholders in signature block",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-04",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A8"
+      ],
+      "note": "[gc_group_wording] 'Group' in a standalone note",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-01",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A7"
+      ],
+      "note": "[gc_one_decimal] one-decimal figure in a 2-dp note",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-03",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A7"
+      ],
+      "note": "[gc_period_scope] out-of-scope date June 30, 2026",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-03",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A10"
+      ],
+      "note": "[gc_period_scope] malformed date 31st June",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-01",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A6"
+      ],
+      "note": "[gc_rounding_mismatch] net worth rounding mismatch; [gc_stale_figure] profit/loss figure \u2260 statements",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-02",
+      "sheet": "Note 29-34",
+      "cells": [
+        "A6"
+      ],
+      "note": "[gc_sign_wording] profit/loss wording contradicts the sign",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "GC-05",
+      "sheet": "Note 20-27",
+      "cells": [
+        "A81"
+      ],
+      "note": "[gc_tax_note_contradiction] tax note contradicts the result for the year",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "NARR-01",
+      "sheet": "Note 6-11",
+      "cells": [
+        "A49"
+      ],
+      "note": "[narrative_wrong_provision] narrative allowance \u2260 table",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-06",
+      "sheet": "Note 6-11",
+      "cells": [
+        "A49"
+      ],
+      "note": "[narrative_wrong_provision] same defect via the text-number rule",
+      "severity": "Medium",
+      "source": "injected",
+      "required": false
+    },
+    {
+      "rule_id": "RATIO-03",
+      "sheet": "Note 29-34",
+      "cells": [
+        "F24",
+        "G24"
+      ],
+      "note": "[ratio_no_reason] variance > 25 % unexplained",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-10",
+      "sheet": "RPT",
+      "cells": [
+        "A33"
+      ],
+      "note": "[rpt_equity_not_disclosed] SOCIE issue of shares not disclosed as a related-party transaction",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-09",
+      "sheet": "RPT",
+      "cells": [
+        "A41",
+        "A42"
+      ],
+      "note": "[rpt_omitted_balance] omitted balance: trade payable to holding company",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-12",
+      "sheet": "RPT",
+      "cells": [
+        "A39"
+      ],
+      "note": "[rpt_stale_caption] out-of-scope date in caption",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-09",
+      "sheet": "RPT",
+      "cells": [
+        "A49"
+      ],
+      "note": "[rpt_wrong_counterparty] wrong counterparty (TB counterparty differs)",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "RPT-11",
+      "sheet": "RPT",
+      "cells": [
+        "A12"
+      ],
+      "note": "[rpt_wrong_relationship] subsidiary described as a step-down subsidiary of the parent",
+      "severity": "Medium",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-01",
+      "sheet": "SOCIE",
+      "cells": [
+        "C32"
+      ],
+      "note": "[signing_date_implausible] signing date before period end",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "TXT-01",
+      "sheet": "BS",
+      "cells": [
+        "C67"
+      ],
+      "note": "[signing_date_implausible] blank signing date",
+      "severity": "High",
+      "source": "injected",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "CFS",
+      "cells": [
+        "B24"
+      ],
+      "note": "printed 595.87 vs printed lines 595.90",
+      "severity": "High",
+      "source": "collateral",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "CFS",
+      "cells": [
+        "B30"
+      ],
+      "note": "printed -33.31 vs printed lines -32.84",
+      "severity": "High",
+      "source": "collateral",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "Note 12-13",
+      "cells": [
+        "C36"
+      ],
+      "note": "printed 1499.84 vs printed lines 1500.00",
+      "severity": "High",
+      "source": "collateral",
+      "required": true
+    },
+    {
+      "rule_id": "CAST-01",
+      "sheet": "Note 20-27",
+      "cells": [
+        "B23"
+      ],
+      "note": "printed 37.29 vs printed lines 37.72",
+      "severity": "High",
+      "source": "collateral",
+      "required": true
+    },
+    {
+      "rule_id": "BAL-01",
+      "sheet": "BS",
+      "cells": [
+        "D25"
+      ],
+      "note": "Balance Sheet PY does not tally on print by -468.20",
+      "severity": "High",
+      "source": "collateral",
+      "required": true
+    }
+  ]
+}

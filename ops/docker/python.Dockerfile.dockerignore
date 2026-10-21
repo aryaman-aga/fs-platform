@@ -1,0 +1,16 @@
+# Whitelist for ops/docker/python.Dockerfile (context = repo root): only the two Python packages.
+# Client material, local databases, virtualenvs and secrets can never enter the image.
+*
+!fscore
+!fsweb
+**/__pycache__
+**/*.pyc
+**/tests
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.hypothesis
+**/var
+**/.env
+**/.env.*
+**/*.fspkg

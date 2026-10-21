@@ -1,0 +1,73 @@
+# OpenTelemetry Collector (contrib distribution): one entry point for traces, logs and metrics from
+# the API, workers and render workers (E-OPS-02). Point the services at it with
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+# The scrub processor removes attributes that could carry client data or secrets before export.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+  attributes/scrub:
+    actions:
+      - key: db.statement
+        action: delete
+      - key: db.query.text
+        action: delete
+      - key: http.request.body
+        action: delete
+      - key: http.url
+        action: delete
+      - key: url.full
+        action: delete
+      - key: url.query
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: http.request.header.x-worker-token
+        action: delete
+      - key: user.email
+        action: delete
+      - key: enduser.id
+        action: hash
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: prod
+        action: upsert
+      - key: site
+        value: fs-primary
+        action: upsert
+  batch: {}
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, resource, batch]
+      exporters: [otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, resource, batch]
+      exporters: [otlphttp/loki]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]

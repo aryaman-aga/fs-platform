@@ -1,0 +1,124 @@
+# Nightly audit-chain verification + head hash (06 §4), the monthly application restore drill (C13) and the
+# compliance jobs below.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-audit-chain
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cron.auditChain.schedule | quote }}
+  timeZone: {{ .Values.cron.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs-platform.fullname" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: audit-chain
+              image: {{ include "fs-platform.image" (list . .Values.image.api) }}
+              command: ["/bin/sh", "-c", "python -m fsweb.manage verify-audit-chain && python -m fsweb.manage audit-head"]
+              envFrom:
+                {{- include "fs-platform.envFrom" . | nindent 16 }}
+              env:
+                {{- include "fs-platform.secretEnv" . | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+                - { name: audit-heads, mountPath: /audit-heads }
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: audit-heads
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs-platform.fullname" . }}-restore-drill
+  labels:
+    {{- include "fs-platform.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cron.restoreDrill.schedule | quote }}
+  timeZone: {{ .Values.cron.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs-platform.fullname" . }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: restore-drill
+              image: {{ include "fs-platform.image" (list . .Values.image.api) }}
+              # Cron ORs day-of-month and day-of-week, so the schedule runs on days 1-7 and the
+              # command only acts on the Sunday among them: the first Sunday of the month.
+              command: ["/bin/sh", "-c", "if [ \"$(date +%u)\" = 7 ]; then exec python -m fsweb.manage restore-drill; fi; echo 'not the first Sunday'"]
+              envFrom:
+                {{- include "fs-platform.envFrom" . | nindent 16 }}
+              env:
+                {{- include "fs-platform.secretEnv" . | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+                - { name: work, mountPath: /work }
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            - name: work
+              emptyDir: { sizeLimit: 10Gi }
+{{- /* Compliance jobs: CERT-In deadline reminders (E-SEC-05), access-review auto-revoke and the quarterly campaign (C14). */}}
+{{- range $job := list (dict "name" "incident-check" "cron" .Values.cron.incidentCheck) (dict "name" "auto-revoke" "cron" .Values.cron.autoRevoke) (dict "name" "start-access-review" "cron" .Values.cron.accessReview) }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs-platform.fullname" $ }}-{{ $job.name }}
+  labels:
+    {{- include "fs-platform.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ $job.cron.schedule | quote }}
+  timeZone: {{ $.Values.cron.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs-platform.fullname" $ }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: {{ $job.name }}
+              image: {{ include "fs-platform.image" (list $ $.Values.image.api) }}
+              command: ["python", "-m", "fsweb.manage", {{ $job.name | quote }}]
+              envFrom:
+                {{- include "fs-platform.envFrom" $ | nindent 16 }}
+              env:
+                {{- include "fs-platform.secretEnv" $ | nindent 16 }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

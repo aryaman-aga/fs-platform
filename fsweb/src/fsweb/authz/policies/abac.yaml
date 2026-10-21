@@ -1,0 +1,67 @@
+# Attribute-based access-control policy (E-SEC-02). Evaluated server-side on every
+# request AFTER the RBAC matrix has granted the permission, so these rules can only
+# restrict. Policies are versioned data: a Firm Admin publishes a new version from
+# the admin console (step-up MFA + reason) and every decision records the version.
+name: abac
+version: 1
+rules:
+  - id: locked-read-only
+    description: A FINAL_LOCKED or ARCHIVED engagement is read-only (06 §1); only the dual-controlled unlock may act on it.
+    effect: deny
+    when:
+      action_class: [write]
+      engagement_status: [FINAL_LOCKED, ARCHIVED]
+
+  - id: quarantine-read-only
+    description: A quarantined (restored / imported) engagement is read-only until a Partner promotes it (07 §5).
+    effect: deny
+    when:
+      action_class: [write, unlock]
+      engagement_quarantine: [true]
+
+  - id: client-user-own-client
+    description: Client users act only on the client they are linked to (05 §1).
+    effect: deny
+    when:
+      user_type: [client]
+      client_assigned: [false]
+
+  - id: client-download-role-setting
+    description: Client users download only when their role (or a per-user override) permits it (05 §1).
+    effect: deny
+    when:
+      user_type: [client]
+      action_class: [download]
+      download_allowed: [false]
+
+  - id: client-sees-released-only
+    description: Client users see an engagement only once a draft has been released to them.
+    effect: deny
+    when:
+      user_type: [client]
+      action_class: [read, download, write]
+      engagement_status: [DRAFT_SETUP, DATA_RECEIVED, CHECKED, FIX_PLANNED, FIX_APPROVED, FIXED_VERIFIED, REVIEW]
+    unless:
+      action: [file.upload, engagement.view, portal.view, portal.respond]
+
+  - id: admin-from-office-network
+    description: Administrative actions only from office networks when office CIDRs are configured (05 §1 IP allow-list).
+    effect: deny
+    when:
+      action_class: [admin]
+      network: [remote]
+      office_networks_configured: [true]
+
+  - id: restricted-classification-firm-only
+    description: Data classified "restricted" is never shown to client users.
+    effect: deny
+    when:
+      classification: [restricted]
+      user_type: [client]
+
+  - id: system-admin-no-client-data
+    description: System Admin has no access to client data by default (05 §2, E-SEC-03).
+    effect: deny
+    when:
+      system_admin_only: [true]
+      client_scoped: [true]

@@ -1,0 +1,191 @@
+# FS-Platform alert rules. Every alert carries `runbook` (repository path, checked by
+# ops/tests/test_ops_configs.py) and `runbook_url` (published copy). Alerts contain
+# infrastructure facts only — never client names or figures.
+groups:
+  - name: fs-availability
+    rules:
+      - alert: ApiDown
+        expr: up{job="fsweb-api"} == 0 or absent(up{job="fsweb-api"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "FS-Platform API instance {{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape the API for 2 minutes. Users may be unable to log in or work."
+          runbook: ops/runbooks/alerts/ApiDown.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/ApiDown.md"
+
+      - alert: ApiLatencyP95High
+        expr: fs:api_request_duration_seconds:p95_5m > 0.3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency {{ $value | humanizeDuration }} > 300 ms (SLO, E-OPS-01)"
+          description: "The 95th percentile of API request latency has exceeded the 300 ms SLO for 15 minutes."
+          runbook: ops/runbooks/alerts/ApiLatencyP95High.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/ApiLatencyP95High.md"
+
+      - alert: ErrorBudgetBurn
+        # Multi-window burn rate for the 99.5 % availability SLO (budget 0.5 %):
+        # fast = 14.4x over 1h and 5m (2 % of the 30-day budget in 1 h); slow = 6x over 6h and 30m.
+        expr: |
+          (fs:api_error_ratio:rate1h > (14.4 * 0.005) and fs:api_error_ratio:rate5m > (14.4 * 0.005))
+          or
+          (fs:api_error_ratio:rate6h > (6 * 0.005) and fs:api_error_ratio:rate30m > (6 * 0.005))
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error budget burning fast (5xx ratio {{ $value | humanizePercentage }})"
+          description: "At this rate the monthly 0.5 % error budget will be exhausted early; freeze releases (E-OPS-01)."
+          runbook: ops/runbooks/alerts/ErrorBudgetBurn.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/ErrorBudgetBurn.md"
+
+  - name: fs-processing
+    rules:
+      - alert: CheckRunP95High
+        expr: fs:run_duration_seconds:p95_1h{kind="check"} > 60
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Check runs p95 {{ $value | humanizeDuration }} > 60 s (SLO)"
+          description: "Workbook check runs are slower than the 60 s p95 target over the last hour."
+          runbook: ops/runbooks/alerts/CheckRunP95High.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/CheckRunP95High.md"
+
+      - alert: RenderP95High
+        expr: fs:run_duration_seconds:p95_1h{kind="render"} > 90
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PDF renders p95 {{ $value | humanizeDuration }} > 90 s (SLO)"
+          description: "PDF rendering (Excel pool or LibreOffice fallback) is slower than the 90 s p95 target."
+          runbook: ops/runbooks/alerts/RenderP95High.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/RenderP95High.md"
+
+      - alert: JobQueueBacklog
+        expr: max by (queue) (fsweb_job_queue_depth) > 20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job queue {{ $labels.queue }} has {{ $value }} waiting jobs"
+          description: "Jobs are queuing faster than workers process them for 15 minutes."
+          runbook: ops/runbooks/alerts/JobQueueBacklog.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/JobQueueBacklog.md"
+
+      - alert: RenderWorkerDown
+        expr: (time() - fsweb_render_worker_last_heartbeat_timestamp_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Windows render worker {{ $labels.worker_id }} has not sent a heartbeat for 5 minutes"
+          description: "Renders fall back to the remaining Excel workers or to LibreOffice; finals may wait."
+          runbook: ops/runbooks/alerts/RenderWorkerDown.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/RenderWorkerDown.md"
+
+  - name: fs-backup-and-integrity
+    rules:
+      - alert: BackupJobFailed
+        expr: fs_backup_last_run_status == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backup job {{ $labels.kind }} failed"
+          description: "The last {{ $labels.kind }} run reported failure (07 §6)."
+          runbook: ops/runbooks/alerts/BackupJobFailed.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/BackupJobFailed.md"
+
+      - alert: WalArchiveLagHigh
+        # Lag means completed WAL segments are waiting to be archived (an idle database is not lag).
+        expr: |
+          ((time() - fs_backup_wal_last_archived_timestamp_seconds) > 600 and on() (fs_backup_wal_pending_segments > 0))
+          or increase(pg_stat_archiver_failed_count[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "WAL archiving is more than 10 minutes behind (RPO 15 min at risk)"
+          description: "PostgreSQL WAL segments are not reaching the pgBackRest repository."
+          runbook: ops/runbooks/alerts/WalArchiveLagHigh.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/WalArchiveLagHigh.md"
+
+      - alert: OffsiteBackupStale
+        expr: (time() - fs_backup_snapshot_last_timestamp_seconds{target="offsite"}) > 26 * 3600
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Off-site backup is older than 26 hours"
+          description: "The newest restic snapshot in the off-site object-locked bucket is {{ $value | humanizeDuration }} old."
+          runbook: ops/runbooks/alerts/OffsiteBackupStale.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/OffsiteBackupStale.md"
+
+      - alert: RestoreDrillMissed
+        expr: |
+          (time() - fs_restore_drill_last_success_timestamp_seconds) > 35 * 86400
+          or absent(fs_restore_drill_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful restore drill in the last 35 days (control C13)"
+          description: "The monthly restore drill has not passed; restore capability is unverified."
+          runbook: ops/runbooks/alerts/RestoreDrillMissed.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/RestoreDrillMissed.md"
+
+      - alert: AuditChainVerificationFailed
+        expr: |
+          fs_audit_chain_verify_status == 0
+          or (time() - fs_audit_chain_last_verify_timestamp_seconds) > 26 * 3600
+          or absent(fs_audit_chain_verify_status)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Audit-trail hash chain verification failed or did not run"
+          description: "Possible tampering with audit_event, or the nightly verification job is broken (06 §4)."
+          runbook: ops/runbooks/alerts/AuditChainVerificationFailed.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/AuditChainVerificationFailed.md"
+
+      - alert: EmergencyChangeReviewOverdue
+        expr: max(fsweb_itgc_emergency_reviews_overdue) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} emergency change(s) deployed more than 48 hours ago are still not approved"
+          description: "E-ITGC-01: an emergency change is deployed first and approved by someone other than the developer within 48 hours."
+          runbook: ops/runbooks/alerts/EmergencyChangeReviewOverdue.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/EmergencyChangeReviewOverdue.md"
+
+  - name: fs-host
+    rules:
+      - alert: DiskUsageHigh
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs"}
+               / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs"}) > 0.80
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+          description: "Disk usage above 80 % (07 §6). WAL archiving and uploads fail when the disk fills."
+          runbook: ops/runbooks/alerts/DiskUsageHigh.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/DiskUsageHigh.md"
+
+      - alert: ClockNotSynchronised
+        expr: node_timex_sync_status == 0 or abs(node_timex_offset_seconds) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host clock is not synchronised to NIC/NPL NTP (CERT-In)"
+          description: "Audit and security log timestamps must be traceable to NIC/NPL time (E-SEC-05)."
+          runbook: ops/runbooks/alerts/ClockNotSynchronised.md
+          runbook_url: "{{ $externalLabels.runbook_base }}/alerts/ClockNotSynchronised.md"

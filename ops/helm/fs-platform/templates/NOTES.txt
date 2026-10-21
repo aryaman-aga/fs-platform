@@ -1,0 +1,10 @@
+FS-Platform {{ .Chart.AppVersion }} installed as release "{{ .Release.Name }}".
+
+  API:      https://{{ .Values.config.siteHost }}/api/v1/health
+  Replicas: api {{ .Values.api.replicas }} (HPA {{ .Values.api.autoscaling.enabled }}), worker {{ .Values.worker.replicas }}, ai-gateway {{ if .Values.aiGateway.enabled }}{{ .Values.aiGateway.replicas }}{{ else }}disabled{{ end }}
+
+Next steps
+  1. Bootstrap the first Firm Admin (one time):
+       kubectl exec deploy/{{ include "fs-platform.fullname" . }}-api -- python -m fsweb.manage bootstrap --tenant "<firm>" --admin-email <e-mail>
+  2. Verify the audit chain:  kubectl exec deploy/{{ include "fs-platform.fullname" . }}-api -- python -m fsweb.manage verify-audit-chain
+  3. Run the HA acceptance drill (E-ARCH-01): kill one node during a load test; API recovery < 2 min, DB failover < 30 s.

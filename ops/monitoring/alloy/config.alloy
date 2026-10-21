@@ -1,0 +1,41 @@
+// Grafana Alloy: ships container logs to Loki (replaces Promtail, which reached end of life in 2026).
+// Reads Docker's json-file logs from disk — no access to docker.sock (a root-equivalent socket).
+// Container IDs appear in the `filename` label; `docker compose ps -q <service>` maps them back.
+
+local.file_match "containers" {
+  path_targets = [{"__path__" = "/var/lib/docker/containers/*/*-json.log", "job" = "docker"}]
+}
+
+loki.source.file "containers" {
+  targets    = local.file_match.containers.targets
+  forward_to = [loki.process.containers.receiver]
+}
+
+loki.process "containers" {
+  stage.docker {}
+
+  // Health checks and metrics scrapes are noise.
+  stage.drop {
+    expression = ".*GET /api/v1/(health|ready).*"
+  }
+
+  // Defence in depth: never forward anything that looks like a session cookie or worker token.
+  stage.replace {
+    expression = "(?i)(fs_session=|x-worker-token[\"': ]+)([A-Za-z0-9._~+/=-]+)"
+    replace    = "REDACTED"
+  }
+
+  stage.static_labels {
+    values = {
+      site = "fs-primary",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

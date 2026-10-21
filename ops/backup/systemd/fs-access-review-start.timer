@@ -1,0 +1,9 @@
+[Unit]
+Description=FS-Platform quarterly access-review campaign (first day of each quarter, 09:00 IST)
+
+[Timer]
+OnCalendar=*-01,04,07,10-01 09:00:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

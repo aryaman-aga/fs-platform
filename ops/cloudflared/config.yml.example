@@ -1,0 +1,27 @@
+# Cloudflare Tunnel (ADR-0002): remote users reach the firm server without any inbound port on
+# the office router. Copy to ops/cloudflared/config.yml, create the tunnel with
+#   cloudflared tunnel create fs-platform
+# and start the `tunnel` compose profile. Then REMOVE the published 80/443 ports from Caddy
+# (or bind them to the LAN address only) so the tunnel is the only path in from outside.
+#
+# Put Cloudflare Access (Zero Trust) in front of the hostname as an extra identity gate, and keep
+# the application's own MFA mandatory — the tunnel is transport, not authentication.
+tunnel: 00000000-0000-0000-0000-000000000000        # tunnel UUID (placeholder)
+credentials-file: /etc/cloudflared/credentials.json  # mount the credentials file read-only
+
+# Origin requests go to Caddy over the docker `edge` network. Caddy still terminates TLS with its
+# own certificate; originServerName must match FS_SITE_ADDRESS.
+ingress:
+  - hostname: fs.example-firm.in
+    service: https://caddy:443
+    originRequest:
+      originServerName: fs.example-firm.in
+      connectTimeout: 30s
+      http2Origin: true
+      noTLSVerify: false
+  # The internal render API is NOT published through the tunnel: render workers stay on the LAN/VPN.
+  - service: http_status:404
+
+# Do not let the tunnel software update itself in production (change control, E-ITGC-01).
+no-autoupdate: true
+loglevel: info
