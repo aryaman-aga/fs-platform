@@ -7,8 +7,10 @@ import { ApiError, api, setCsrfToken, setPasswordChangeHandler, setSessionEndHan
 import { qk } from "@/api/hooks";
 import type { MeOut } from "@/api/types";
 
-import { can as canFn, isClientUser, needsMfa } from "./permissions";
+import { can as canFn, isClientUser, mfaRequired, needsMfa } from "./permissions";
 
+/** "mfa": the password is verified, the authenticator code is still due — never where no authenticator is required, so
+ * no guard sends anyone to /mfa or /mfa/enroll there. */
 export type AuthStatus = "loading" | "anonymous" | "mfa" | "ready";
 
 export interface AuthState {
@@ -44,7 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
   const me = meQuery.data ?? null;
-  const status: AuthStatus = meQuery.isLoading ? "loading" : !me ? "anonymous" : needsMfa(me) ? "mfa" : "ready";
+  // Without an authenticator there is no code step: a half-finished sign-in from before it was switched off signs in again.
+  const status: AuthStatus = meQuery.isLoading ? "loading" : !me ? "anonymous" : needsMfa(me) ? (mfaRequired(me) ? "mfa" : "anonymous") : "ready";
 
   useEffect(() => {
     setSessionEndHandler((err) => {

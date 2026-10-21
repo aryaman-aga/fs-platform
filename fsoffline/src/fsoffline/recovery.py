@@ -6,6 +6,7 @@ Started from the Start menu (it asks for administrator rights), or non-interacti
 
 from __future__ import annotations
 
+import configparser
 import contextlib
 import json
 import os
@@ -21,14 +22,21 @@ from typing import Any
 from fsoffline import backup as backups
 from fsoffline.desktop import read_runtime, request_stop
 from fsoffline.install import DEFAULT_PORT, load_install_config
-from fsoffline.settings import OfflineSettings, build_env, ensure_layout, redacted
+from fsoffline.settings import (
+    OfflineConfigError,
+    OfflineSettings,
+    build_env,
+    ensure_layout,
+    mfa_required,
+    redacted,
+)
 
 USERS_GROUP = "FS-Platform Users"  # the Windows accounts allowed to use FS-Platform on this PC (created by the installer)
 
 MENU = """
 FS-Platform Recovery
   1. Reset an administrator's password (shows a one-time link)
-  2. Reset an administrator's authenticator (MFA)
+  2. Reset an administrator's authenticator {mfa}
   3. Allow another Windows account to use FS-Platform
   4. Restore a backup
   5. Save diagnostics for support
@@ -104,10 +112,32 @@ def reset_password(settings: OfflineSettings, email: str) -> tuple[str, datetime
 
 
 def reset_mfa(settings: OfflineSettings, email: str) -> None:
-    """Remove the account's authenticator; it enrols a new one (QR code) at the next sign-in."""
+    """Remove the account's authenticator; a new one is enrolled (QR code) when sign-in next asks for one."""
     from fsweb.services.accounts import reset_mfa as _reset
 
     _with_user(settings, email, lambda s, cfg, user: _reset(s, user, _actor(user.tenant_id)))
+
+
+def authenticator_on(settings: OfflineSettings) -> bool:
+    """Whether sign-in on this PC asks for an authenticator code (``[app] mfa_required`` in fsplatform.ini); a
+    setting that cannot be read counts as on, which is how it should be treated until it is corrected."""
+    try:
+        return mfa_required(settings)
+    except (OfflineConfigError, configparser.Error):
+        return True
+
+
+def mfa_reset_done(settings: OfflineSettings, email: str) -> str:
+    if authenticator_on(settings):
+        return f"{email} enrols a new authenticator at the next sign-in."
+    return (f"{email}'s authenticator is removed. Sign-in on this PC asks only for the e-mail and password "
+            "while the authenticator is switched off.")
+
+
+def menu(settings: OfflineSettings) -> str:
+    """The menu. Without an authenticator (the desktop default) resetting one helps nobody to sign in."""
+    mfa = "(MFA)" if authenticator_on(settings) else "(only when the authenticator is switched on)"
+    return MENU.format(mfa=mfa)
 
 
 def allow_windows_account(account: str) -> None:  # pragma: no cover - Windows
@@ -153,7 +183,7 @@ def _ask(prompt: str) -> str:
 def interactive(settings: OfflineSettings) -> int:  # pragma: no cover - console UI
     print(f"Data folder: {settings.data_dir}")
     while True:
-        print(MENU)
+        print(menu(settings))
         choice = _ask("Choose: ")
         try:
             if choice == "1":
@@ -162,7 +192,7 @@ def interactive(settings: OfflineSettings) -> int:  # pragma: no cover - console
             elif choice == "2":
                 email = _ask("Administrator's e-mail: ")
                 reset_mfa(settings, email)
-                print(f"\n{email} enrols a new authenticator at the next sign-in.\n")
+                print(f"\n{mfa_reset_done(settings, email)}\n")
             elif choice == "3":
                 account = _ask(r"Windows account (e.g. OFFICE-PC\priya): ")
                 allow_windows_account(account)
@@ -193,5 +223,6 @@ def interactive(settings: OfflineSettings) -> int:  # pragma: no cover - console
             print(f"\nNot done: {exc}\n")
 
 
-__all__ = ["USERS_GROUP", "RecoveryError", "allow_windows_account", "diagnostics", "interactive", "is_admin", "relaunch_elevated",
-           "reset_mfa", "reset_password", "restore"]
+__all__ = ["USERS_GROUP", "RecoveryError", "allow_windows_account", "authenticator_on", "diagnostics",
+           "interactive", "is_admin", "menu", "mfa_reset_done", "relaunch_elevated", "reset_mfa",
+           "reset_password", "restore"]

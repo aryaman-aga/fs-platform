@@ -9,6 +9,7 @@ site without connectivity (04 §2, mode C).
 | MinIO / S3 object store | local object folder |
 | separate job workers | worker threads inside the app |
 | Caddy + TLS on the firm domain | `http://127.0.0.1:8746` — **loopback only** |
+| password + authenticator code (or SSO); users invited | e-mail and password; *Create an account* (no access until an administrator assigns a role) — both switchable |
 | AI gateway optional | AI off until an administrator turns it on |
 
 The app refuses to bind anything except `127.0.0.1` / `::1`: a PC must never serve client data to its network.
@@ -23,12 +24,19 @@ Visual C++ runtime and LibreOffice — so the PC needs nothing else and no inter
 - program files in `C:\Program Files\FS-Platform`, data in `C:\ProgramData\FSPlatform` (database, files, keys, logs,
   backups), readable only by SYSTEM, Administrators and the **FS-Platform Users** group;
 - a tray icon (Open · Back up now · Open data folder · Quit); one server per PC, shared by every Windows account
-  that may use it; the first start opens the setup page (firm + first administrator, authenticator by QR code);
+  that may use it; the first start opens the setup page (firm + first administrator);
+- sign-in with e-mail and password, privileged actions confirmed with the password (step-up); colleagues use
+  *Create an account* and see nothing until an administrator assigns a role. Two switches in
+  `<data>\fsplatform.ini` (`[app]`): `mfa_required = true` adds the authenticator (TOTP, QR code) for everyone —
+  recommended on PCs many people use — and `signup_enabled = false` leaves invitations only. The launcher passes
+  them to fsweb as `FSWEB_MFA_REQUIRED` / `FSWEB_SIGNUP_ENABLED`, which the firm server (`FSWEB_ENV=prod`) refuses;
+  a value that is neither true nor false stops the start with a message (threat model T52);
 - PDFs through Microsoft Excel when installed, otherwise the bundled LibreOffice; drafts can also use the built-in
   renderer;
 - daily backups (keep 14, files mirrored incrementally), optionally copied to a second folder set on
-  Admin → Backups; **FS-Platform Recovery** (Start menu, administrator) resets an administrator's password or
-  authenticator, allows a Windows account, restores a backup and saves diagnostics.
+  Admin → Backups; **FS-Platform Recovery** (Start menu, administrator) resets an administrator's password (or
+  authenticator, marked as relevant only when it is switched on), allows a Windows account, restores a backup and
+  saves diagnostics.
 
 ### Build the installer
 
@@ -40,10 +48,25 @@ Runs on macOS, Linux or Windows with CPython 3.13, Node.js 22 and `makensis` (NS
 is the official embeddable CPython plus the win_amd64 wheels pinned (with hashes) in
 `packaging/requirements-windows.lock`, FS-Platform's own wheels and the built UI; `packaging/installer.nsi` is the
 NSIS script. After changing dependencies run `make windows-lock`. The `windows` CI workflow builds the installer on
-macOS, installs it on a clean Windows runner and runs `packaging/smoke_test.py` end to end (setup, a second user,
-upload, checks, fix plan approved by the other user, apply and verify, LibreOffice PDF, backup, upgrade, uninstall).
+macOS, installs it on a clean Windows runner and runs `packaging/smoke_test.py` end to end (setup, password sign-in,
+a colleague's self-service account given a role by the administrator, upload, checks, fix plan approved by the other
+user, apply and verify, LibreOffice PDF, backup, restart, upgrade, uninstall).
 Sign the installer with the firm's code-signing certificate before distributing it, and record the release in the
 ITGC change log (E-ITGC-01).
+
+### Release the installer
+
+Clients download from one permanent link, which always serves the newest release:
+`https://github.com/<owner>/<repo>/releases/latest/download/FS-Platform-Setup.exe`. For each version:
+
+1. Wait until every check of the release commit is green (the `windows` workflow installed exactly that build).
+2. Download its `fs-platform-windows-installer` artifact; the zip's SHA-256 must equal the artifact's digest on GitHub,
+   and the installer must match its `.sha256`.
+3. Publish it as the latest release under the **fixed** asset name, with a `desktop-v` tag (plain `v*.*.*` tags start the
+   firm-server image release, `.github/workflows/release.yml`):
+   `gh release create desktop-vX.Y.Z --target <commit> --latest FS-Platform-Setup.exe FS-Platform-Setup.exe.sha256`
+   (the `.sha256` names `FS-Platform-Setup.exe`).
+4. Download through the permanent link once and compare the checksum.
 
 ## Commands
 
@@ -94,6 +117,7 @@ packages** (`.fspkg`, 07 §4, E-DATA-05):
 ```
 
 They cover loopback-only binding, per-OS data directories, secret creation and reuse
-(mode 0600), the environment handed to fsweb, free-port selection, the single-instance
-lock, in-process `fsweb.manage` invocation and the worker entry-point resolution — without
-needing fsweb installed.
+(mode 0600), the environment handed to fsweb (with the sign-in switches read from
+`fsplatform.ini`), free-port selection, the single-instance lock, in-process
+`fsweb.manage` invocation and the worker entry-point resolution — without needing fsweb
+installed.

@@ -48,13 +48,26 @@ class LoginIn(In):
 
 
 class LoginOut(Out):
-    status: Literal["mfa_required", "mfa_enrollment_required"]
+    status: Literal["ok", "mfa_required", "mfa_enrollment_required"]  # ok: signed in, no authenticator needed
     csrf_token: str
     expires_at: datetime
 
 
 class MfaCodeIn(In):
     code: str = Field(min_length=6, max_length=20)
+
+
+class StepUpIn(In):
+    """Confirm a privileged action: the authenticator code, or the password where no authenticator is required."""
+
+    code: str | None = Field(default=None, min_length=6, max_length=20)
+    password: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class SignupIn(In):
+    name: str = Field(min_length=1, max_length=200)
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)  # the password policy answers with a readable 400
 
 
 class MfaEnrollOut(Out):
@@ -124,6 +137,7 @@ class MeOut(Out):
     ai_policy_version: int | None = None
     ai_policy_accepted: bool = False
     must_change_password: bool = False  # = user.must_change_password: the UI sends the user to the change form
+    mfa_required: bool = True  # False: no authenticator; privileged actions are confirmed with the password
 
 
 class AuthOptionsOut(Out):
@@ -133,6 +147,8 @@ class AuthOptionsOut(Out):
     sso: bool  # firm single sign-on (OIDC) is configured
     edition: Literal["desktop", "server"]  # desktop = FSWEB_ENV=offline: one PC, loopback only, no e-mail
     self_service_reset: bool  # "forgot password" e-mails a link (SMTP configured); otherwise an administrator resets it
+    mfa_required: bool = True  # sign-in asks for an authenticator code (False: e-mail and password only)
+    signup: bool = False  # "Create an account" on the sign-in page (desktop edition)
 
 
 class SetupIn(In):
@@ -147,7 +163,7 @@ class SetupIn(In):
 class SetupOut(Out):
     tenant_id: str
     admin_email: str
-    message: str = "FS-Platform is set up. Sign in, then scan the QR code with your authenticator app."
+    message: str = "FS-Platform is set up. Sign in with your e-mail and password."
 
 
 class PasswordResetLinkOut(Out):

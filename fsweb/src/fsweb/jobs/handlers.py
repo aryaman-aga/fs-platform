@@ -355,6 +355,21 @@ def handle_narrative(ctx: JobContext, db: Session, run: Run, eng: Engagement) ->
     return {"output_version_id": nv.id, "edits": ids}
 
 
+FINDING_CLOSED = ("Not an issue", "Resolved")  # the statuses workflow.final_pdf_gates does not count as open
+
+
+def final_check_result(st: AppState, db: Session, eng: Engagement, base: FileVersion) -> CheckResult:
+    """The check run a FINAL PDF stands on (02 §10A): the latest check of this workbook version, without the
+    findings people closed in the platform, so the engine's own final gate (control C7) agrees with the gate the
+    request passed (``workflow.final_pdf_gates``)."""
+    check = workflow.latest_run(db, eng, "check", version_id=base.id)
+    result = _check_result_for(db, st, check.id) if check is not None else None
+    if check is None or result is None:
+        raise JobFailed("not_checked", "run the checks on this workbook version before rendering a FINAL PDF")
+    closed = set(db.execute(select(FindingRow.fid).where(FindingRow.run_id == check.id, FindingRow.status.in_(FINDING_CLOSED))).scalars())
+    return result.model_copy(update={"findings": [f for f in result.findings if (f.id or "") not in closed]})
+
+
 def handle_render(ctx: JobContext, db: Session, run: Run, eng: Engagement) -> dict[str, Any]:
     st = ctx.state
     params = run.params_json or {}
@@ -364,8 +379,10 @@ def handle_render(ctx: JobContext, db: Session, run: Run, eng: Engagement) -> di
     wb = ctx.fetch(db, base.id, "workbook" + Path(base.original_name).suffix)
     out = ctx.sandbox / "statements.pdf"
     cfg = _config(db, eng, ctx)
+    check_result = final_check_result(st, db, eng, base) if mode == "final" else None
     db.commit()
-    res = st.engine.render_pdf(wb, out, mode=mode, config=cfg, run_id=run.id, engine=str(params.get("engine", "auto")))
+    res = st.engine.render_pdf(wb, out, mode=mode, config=cfg, run_id=run.id, check_result=check_result,
+                               engine=str(params.get("engine", "auto")))
     if not res.ok or not res.pdf_path:
         raise JobFailed("render_failed", res.message or "render failed")
     return store_render(ctx, db, run, eng, base, Path(res.pdf_path).read_bytes(), mode, res.engine, res.engine_version,

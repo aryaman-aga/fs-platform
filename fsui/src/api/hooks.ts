@@ -43,7 +43,8 @@ export const qk = {
   client: (id: string) => ["client", id] as const,
 };
 
-/** Public sign-in options: first-run setup, firm SSO, edition (desktop / server), self-service password reset. */
+/** Public sign-in options: first-run setup, firm SSO, edition (desktop / server), self-service password reset, whether
+ * an authenticator app is required and whether people may create their own account. */
 export function useAuthOptions() {
   return useQuery({
     queryKey: qk.options,

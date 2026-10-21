@@ -1,8 +1,9 @@
 /**
- * Privileged actions (E-SEC-03): the server needs a TOTP re-verification within
- * the step-up window and a reason in the X-Action-Reason header. This provider
- * collects both in one dialog, calls /auth/step-up when needed, then runs the
- * action with the reason.
+ * Privileged actions (E-SEC-03): the server needs a fresh confirmation within
+ * the step-up window — the authenticator (TOTP) code, or the password where the
+ * installation requires no authenticator — and a reason in the X-Action-Reason
+ * header. This provider collects both in one dialog, calls /auth/step-up when
+ * needed, then runs the action with the reason.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -10,7 +11,9 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 
 import { ApiError, api } from "@/api/client";
 import { qk } from "@/api/hooks";
+import type { StepUpIn } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
+import { mfaRequired } from "@/auth/permissions";
 
 import { Modal } from "./Modal";
 import { Button, ErrorNotice, TextInput } from "./ui";
@@ -24,9 +27,11 @@ interface Pending {
 }
 
 interface StepUpApi {
-  /** Ask for a reason (+ TOTP if the step-up window has lapsed), then run the action. */
+  /** Ask for a reason (+ the code or password if the step-up window has lapsed), then run the action. */
   run: <T>(title: string, action: (reason: string) => Promise<T>, description?: string) => Promise<T>;
 }
+
+const ENTER_PASSWORD = "Enter your password to continue.";
 
 const Ctx = createContext<StepUpApi | null>(null);
 
@@ -39,10 +44,13 @@ export function stepUpValid(validUntil: string | null | undefined, now: Date = n
 export function StepUpProvider({ children }: { children: ReactNode }) {
   const { me } = useAuth();
   const qc = useQueryClient();
+  // no authenticator on this installation: "Confirm it's you" asks for the password instead of a code
+  const withPassword = !!me && !mfaRequired(me);
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
   const [code, setCode] = useState("");
-  const [needCode, setNeedCode] = useState(false);
+  const [password, setPassword] = useState("");
+  const [needConfirm, setNeedConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -51,8 +59,9 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
       new Promise<T>((resolve, reject) => {
         setReason("");
         setCode("");
+        setPassword("");
         setError(null);
-        setNeedCode(!stepUpValid(me?.session.stepup_valid_until ?? null));
+        setNeedConfirm(!stepUpValid(me?.session.stepup_valid_until ?? null));
         setPending({ title, description, action: action as (r: string) => Promise<unknown>, resolve: resolve as (v: unknown) => void, reject });
       }),
     [me],
@@ -69,11 +78,16 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
       setError(new Error("Give a reason of at least 5 characters (it is recorded in the audit trail)."));
       return;
     }
+    if (needConfirm && withPassword && !password) {
+      setError(new Error(ENTER_PASSWORD));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      if (needCode) {
-        await api("/auth/step-up", { method: "POST", body: { code: code.trim() } });
+      if (needConfirm) {
+        const body: StepUpIn = withPassword ? { password } : { code: code.trim() };
+        await api("/auth/step-up", { method: "POST", body });
         await qc.invalidateQueries({ queryKey: qk.me });
       }
       const out = await pending.action(reason.trim());
@@ -81,8 +95,13 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
       setPending(null);
     } catch (e) {
       if (e instanceof ApiError && e.code === "step_up_required") {
-        setNeedCode(true);
-        setError(new Error("Enter the current code from your authenticator app to confirm."));
+        setNeedConfirm(true);
+        setError(new Error(withPassword ? ENTER_PASSWORD : "Enter the current code from your authenticator app to confirm."));
+      } else if (e instanceof ApiError && e.code === "invalid_password") {
+        setPassword("");
+        setError(new Error("That password isn't right. Try again."));
+      } else if (e instanceof ApiError && e.code === "password_required") {
+        setError(new Error(ENTER_PASSWORD));
       } else {
         setError(e);
       }
@@ -115,7 +134,16 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
             onChange={(e) => setReason(e.target.value)}
             placeholder="e.g. leaver per HR ticket 1234"
           />
-          {needCode ? (
+          {needConfirm && withPassword ? (
+            <TextInput
+              label="Your password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              hint={`Confirm it's you. ${ENTER_PASSWORD}`}
+            />
+          ) : needConfirm ? (
             <TextInput
               label="Authenticator code"
               inputMode="numeric"
@@ -126,6 +154,8 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
               onChange={(e) => setCode(e.target.value.replace(/\s/g, ""))}
               hint="Administrative actions need a fresh MFA confirmation (step-up)."
             />
+          ) : withPassword ? (
+            <p className="small muted">You confirmed it's you a moment ago, so your password isn't needed again yet.</p>
           ) : (
             <p className="small muted">Your MFA step-up is still valid; no code needed.</p>
           )}

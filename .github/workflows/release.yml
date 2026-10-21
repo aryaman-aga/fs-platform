@@ -1,5 +1,6 @@
 # Release sketch (E-ITGC-01, E-SEC-12): tag → images → SBOM → signatures. Promotion to production stays manual
-# and needs a release ticket approved by someone other than the author.
+# and needs a release ticket approved by someone other than the author. Firm-server releases only: the Windows desktop
+# edition is released with `desktop-v*` tags (fsoffline/README.md), which this workflow does not match.
 name: release
 
 on:
@@ -52,7 +53,9 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}:${{ github.ref_name }}
           sbom: true
           provenance: mode=max
-      - uses: aquasecurity/trivy-action@0.33.1
+      # pinned by commit: the action's old tags were removed after the March 2026 compromise; v0.36.0 is an
+      # immutable release
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}@${{ steps.build.outputs.digest }}
           severity: CRITICAL,HIGH

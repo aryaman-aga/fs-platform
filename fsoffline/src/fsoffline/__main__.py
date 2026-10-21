@@ -173,7 +173,7 @@ def _desktop_command(command: str, args: argparse.Namespace, settings: OfflineSe
         print(f"{link}\nvalid until {expires.isoformat()}")
     elif action == "reset-mfa":
         recovery.reset_mfa(settings, args.email)
-        print("authenticator removed; it is enrolled again at the next sign-in")
+        print(recovery.mfa_reset_done(settings, args.email))
     elif action == "allow-user":
         recovery.allow_windows_account(args.account)
         print(f"{args.account} may use FS-Platform after signing in to Windows again")

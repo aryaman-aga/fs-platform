@@ -17,6 +17,8 @@ from pathlib import Path
 
 LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 APP_DIR_NAME = "FSPlatform"
+TRUE_WORDS = ("1", "true", "yes", "on")
+FALSE_WORDS = ("0", "false", "no", "off")
 
 
 class OfflineConfigError(ValueError):
@@ -196,6 +198,8 @@ def build_env(settings: OfflineSettings, port: int, env_name: str = "offline") -
         "FSWEB_PUBLIC_BASE_URL": origin,
         "FSWEB_OFFICE_CIDRS": "127.0.0.1/32,::1/128",
         "FSWEB_AI_ENABLED": "true" if ai_enabled(settings) else "false",  # off unless an administrator turned it on
+        "FSWEB_MFA_REQUIRED": "true" if mfa_required(settings) else "false",
+        "FSWEB_SIGNUP_ENABLED": "true" if signup_enabled(settings) else "false",
         "FSWEB_LOG_LEVEL": "INFO",
         "FSWEB_SETUP_TOKEN_FILE": settings.setup_token_path.as_posix(),
     }
@@ -213,11 +217,36 @@ def build_env(settings: OfflineSettings, port: int, env_name: str = "offline") -
     return env
 
 
-def ai_enabled(settings: OfflineSettings) -> bool:
-    """AI review stays off (nothing leaves the PC) until ``ai_enabled = true`` is set in ``<data>\fsplatform.ini``."""
+def app_flag(settings: OfflineSettings, name: str, default: bool) -> bool:
+    """An on/off switch an administrator may set in the ``[app]`` section of ``<data>\\fsplatform.ini``:
+    ``true`` / ``false`` (also yes/no, on/off, 1/0); missing or empty keeps the default. Anything else stops
+    the start with a message rather than guessing what a security switch was meant to be."""
     from fsoffline.install import load_data_config
 
-    return load_data_config(settings.data_dir).get("ai_enabled", "false").strip().lower() in ("1", "true", "yes", "on")
+    value = (load_data_config(settings.data_dir).get(name) or "").strip().lower()
+    if not value:
+        return default
+    if value in TRUE_WORDS or value in FALSE_WORDS:
+        return value in TRUE_WORDS
+    raise OfflineConfigError(f"fsplatform.ini: [app] {name} = {value!r} is neither true nor false")
+
+
+def ai_enabled(settings: OfflineSettings) -> bool:
+    """AI review stays off (nothing leaves the PC) until ``ai_enabled = true`` is set in
+    ``<data>\\fsplatform.ini``."""
+    return app_flag(settings, "ai_enabled", False)
+
+
+def mfa_required(settings: OfflineSettings) -> bool:
+    """Sign-in with e-mail and password only, unless an administrator sets ``mfa_required = true``: then
+    everyone also signs in, and confirms privileged actions, with an authenticator code."""
+    return app_flag(settings, "mfa_required", False)
+
+
+def signup_enabled(settings: OfflineSettings) -> bool:
+    """"Create an account" on the sign-in page (no access until an administrator gives the account a role),
+    unless an administrator sets ``signup_enabled = false``."""
+    return app_flag(settings, "signup_enabled", True)
 
 
 def redacted(env: Mapping[str, str]) -> dict[str, str]:

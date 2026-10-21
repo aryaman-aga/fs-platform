@@ -93,3 +93,25 @@ are described for the PC's users in [user-guide/windows-install.md](user-guide/w
 full-disk encryption on every such PC. For laptops that exchange engagements with the firm server, register each
 laptop's package-signing key on the server (`fsoffline pubkey`) and trust the server's key on the laptop
 (`fsoffline trust <key>`).
+
+**Sign-in on the desktop edition.** Since 1.0.1 people sign in with e-mail and password only, and confirm
+privileged actions (step-up) with the password; colleagues use *Create an account* on the sign-in page and see
+nothing until an administrator assigns them a role (*Admin → Assignments*; every sign-up is audited as
+`user.signed_up`). An administrator of the PC changes this in `C:\ProgramData\FSPlatform\fsplatform.ini`, then
+quits FS-Platform from the tray and starts it again:
+
+```ini
+[app]
+; everyone also enters an authenticator code (QR enrolment; open sessions are asked for one at once)
+mfa_required = true
+; no "Create an account": colleagues are invited
+signup_enabled = false
+```
+
+Switch the authenticator on for every PC that several people use, and sign-up off once the team has its accounts —
+the residual risk of the defaults is recorded as T52 in the [threat model](security/threat-model.md). After switching
+the authenticator on, have everyone sign in and enrol promptly (an account's first sign-in with its password enrols
+the authenticator) and disable accounts nobody recognises. A value other than true/false stops the start with a
+message. The launcher hands the switches to fsweb as `FSWEB_MFA_REQUIRED` and
+`FSWEB_SIGNUP_ENABLED`; the firm server refuses to start with either relaxed (`FSWEB_ENV=prod` always requires the
+authenticator and has no self-service accounts — users are invited or use SSO).

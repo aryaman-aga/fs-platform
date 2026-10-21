@@ -62,6 +62,10 @@ class Settings(BaseModel):
     session_idle_minutes_client: int = 30
     session_absolute_hours: int = 12
     stepup_minutes: int = 5
+    # Sign-in with an authenticator code (TOTP). Only the desktop edition may switch it off (one PC, loopback
+    # only): then the password signs in and confirms privileged actions; prod refuses to start without it.
+    mfa_required: bool = True
+    signup_enabled: bool = False  # "Create an account" on the sign-in page; no access until given a role
     invite_hours: int = 72
     reset_minutes: int = 60
     lockout_threshold: int = 5
@@ -116,6 +120,10 @@ class Settings(BaseModel):
             data["engine"] = g("FSWEB_ENGINE")
         if g("FSWEB_AI_ENABLED") is not None:
             data["ai_enabled"] = _bool(g("FSWEB_AI_ENABLED"), False)
+        if g("FSWEB_MFA_REQUIRED") is not None:
+            data["mfa_required"] = _bool(g("FSWEB_MFA_REQUIRED"), True)
+        if g("FSWEB_SIGNUP_ENABLED") is not None:
+            data["signup_enabled"] = _bool(g("FSWEB_SIGNUP_ENABLED"), False)
         if g("FSWEB_ALLOWED_ORIGINS"):
             data["allowed_origins"] = _list(g("FSWEB_ALLOWED_ORIGINS"))
         if g("FSWEB_OFFICE_CIDRS"):
@@ -149,6 +157,12 @@ class Settings(BaseModel):
                 problems.append("FSWEB_COOKIE_SECURE must be true in prod")
             if self.database_url.startswith("sqlite"):
                 problems.append("prod (Mode A) requires PostgreSQL; SQLite is for the offline edition (FSWEB_ENV=offline) and tests")
+            if not self.mfa_required:
+                problems.append("FSWEB_MFA_REQUIRED cannot be switched off on the firm server (only the "
+                                "desktop edition may)")
+            if self.signup_enabled:
+                problems.append("FSWEB_SIGNUP_ENABLED is for the desktop edition; the firm server invites "
+                                "users or uses SSO")
         if problems:
             raise RuntimeError("insecure configuration: " + "; ".join(problems))
 

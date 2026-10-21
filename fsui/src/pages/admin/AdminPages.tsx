@@ -1,8 +1,9 @@
-/** Administration (08 §3 screen 6). Privileged changes go through the step-up dialog (reason + fresh MFA). */
+/** Administration (08 §3 screen 6). Privileged changes go through the step-up dialog (reason + a fresh confirmation:
+ * the MFA code, or the password where the installation requires no authenticator). */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useState } from "react";
-import { NavLink, Navigate, useParams } from "react-router-dom";
+import { Link, NavLink, Navigate, useParams, useSearchParams } from "react-router-dom";
 
 import { api, apiBlob, saveFile } from "@/api/client";
 import { useAuthOptions, useClients } from "@/api/hooks";
@@ -27,7 +28,8 @@ import type {
   UserOut,
 } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
-import { adminSections, canAny } from "@/auth/permissions";
+import { adminSections, canAny, mfaRequired, roleInForce } from "@/auth/permissions";
+import type { Column } from "@/components/DataGrid";
 import { DataGrid } from "@/components/DataGrid";
 import { Modal } from "@/components/Modal";
 import { useStepUp } from "@/components/StepUp";
@@ -129,8 +131,16 @@ function Users() {
   const stepUp = useStepUp();
   const act = useAdminAction();
   const options = useAuthOptions();
+  const { me, can } = useAuth();
+  const mfa = mfaRequired(me); // no authenticator on this installation: nothing to show or reset about one
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: () => api<UserOut[]>("/admin/users") });
   const roles = useQuery({ queryKey: ["admin", "roles"], queryFn: () => api<RoleOut[]>("/admin/roles") });
+  // the same list as Assignments ("All"): who has a role, so that new accounts without one stand out
+  const assignments = useQuery({
+    queryKey: ["admin", "assignments", ""],
+    queryFn: () => api<RoleAssignmentOut[]>("/admin/assignments"),
+    enabled: can("engagement.assign"),
+  });
   const clients = useClients();
   const [invite, setInvite] = useState(false);
   const [f, setF] = useState({ email: "", name: "", is_firm_user: true, role_code: "staff", client_id: "" });
@@ -152,7 +162,7 @@ function Users() {
       const out = await stepUp.run(
         `Reset password for ${u.email}`,
         (reason) => api<PasswordResetLinkOut>(`/admin/users/${u.id}/password-reset-link`, { method: "POST", reason }),
-        "Creates a one-time link on which they choose a new password. Using it signs them out everywhere; their authenticator stays enrolled.",
+        `Creates a one-time link on which they choose a new password. Using it signs them out everywhere${mfa ? "; their authenticator stays enrolled" : ""}.`,
       );
       setReset({ ...out, user: u });
       setLink(null);
@@ -162,6 +172,13 @@ function Users() {
     }
   };
   const role = roles.data?.find((r) => r.code === f.role_code);
+  // people nobody has given a role yet (e.g. they created their own account): they see no client until one is assigned
+  const withRole = new Set((assignments.data ?? []).filter((a) => roleInForce(a)).map((a) => a.user_id));
+  const noRole = (u: UserOut) => !!assignments.data && u.status !== "disabled" && !withRole.has(u.id);
+  const waiting = (users.data ?? []).filter(noRole);
+  const mfaColumn: Column<UserOut>[] = mfa
+    ? [{ key: "m", header: "MFA", render: (u) => (u.mfa_enrolled_at ? `${u.mfa_type} · ${formatDate(u.mfa_enrolled_at)}` : <Chip tone="warn">not enrolled</Chip>) }]
+    : [];
   return (
     <Card title="Users" actions={<Button variant="primary" onClick={() => setInvite(true)}>Invite user</Button>} bodyClass="">
       {link?.invite_link ? (
@@ -169,6 +186,14 @@ function Users() {
       ) : null}
       {reset ? (
         <HandOverLink testId="reset-link" intro={`Password reset for ${reset.user.name}: give them this link${onThisPc}`} link={reset.link} expiresAt={reset.expires_at} />
+      ) : null}
+      {waiting.length ? (
+        <div className="card-body" data-testid="no-role-hint">
+          <Notice tone="warn">
+            {waiting.length === 1 ? `${waiting[0]?.name} has no role yet` : `${waiting.length} people have no role yet`}, so they cannot see any client.{" "}
+            <Link to={waiting.length === 1 ? `/admin/assignments?user=${waiting[0]?.id}` : "/admin/assignments"}>Give them a role under Assignments</Link>.
+          </Notice>
+        </div>
       ) : null}
       {users.isLoading ? <div className="card-body"><Spinner /></div> : null}
       <ErrorNotice error={users.error} />
@@ -187,10 +212,11 @@ function Users() {
               <span className="row">
                 <Chip tone={u.status === "active" ? "ok" : u.status === "disabled" ? "danger" : "warn"}>{u.status}</Chip>
                 {u.must_change_password ? <Chip tone="warn" title="Signed in with a one-time password; must choose their own">one-time password</Chip> : null}
+                {noRole(u) ? <Chip tone="warn" title="Sees no client until you give them a role under Assignments">No role yet</Chip> : null}
               </span>
             ),
           },
-          { key: "m", header: "MFA", render: (u) => (u.mfa_enrolled_at ? `${u.mfa_type} · ${formatDate(u.mfa_enrolled_at)}` : <Chip tone="warn">not enrolled</Chip>) },
+          ...mfaColumn,
           { key: "l", header: "Last sign-in", render: (u) => formatDateTime(u.last_login_at) || "—" },
           {
             key: "a",
@@ -211,9 +237,16 @@ function Users() {
                     Reset password
                   </Button>
                 ) : null}
-                <Button size="sm" variant="ghost" onClick={() => void act(`Reset MFA for ${u.email}`, (reason) => api(`/admin/users/${u.id}/mfa-reset`, { method: "POST", reason }), [["admin", "users"]], "MFA reset; the user enrols again at next sign-in")}>
-                  Reset MFA
-                </Button>
+                {mfa ? (
+                  <Button size="sm" variant="ghost" onClick={() => void act(`Reset MFA for ${u.email}`, (reason) => api(`/admin/users/${u.id}/mfa-reset`, { method: "POST", reason }), [["admin", "users"]], "MFA reset; the user enrols again at next sign-in")}>
+                    Reset MFA
+                  </Button>
+                ) : null}
+                {noRole(u) ? (
+                  <Link className="btn sm" to={`/admin/assignments?user=${u.id}`}>
+                    Give a role
+                  </Link>
+                ) : null}
               </span>
             ),
           },
@@ -353,22 +386,33 @@ function Roles() {
 function Assignments() {
   const act = useAdminAction();
   const clients = useClients();
+  const [params] = useSearchParams();
   const [client, setClient] = useState("");
   const list = useQuery({ queryKey: ["admin", "assignments", client], queryFn: () => api<RoleAssignmentOut[]>("/admin/assignments", { query: { client_id: client || undefined } }) });
   const users = useQuery({ queryKey: ["admin", "users"], queryFn: () => api<UserOut[]>("/admin/users") });
   const roles = useQuery({ queryKey: ["admin", "roles"], queryFn: () => api<RoleOut[]>("/admin/roles") });
-  const [f, setF] = useState({ user_id: "", role_code: "staff", client_id: "" });
+  // "Give a role" on Users opens this with ?user=<id> chosen
+  const [f, setF] = useState({ user_id: params.get("user") ?? "", role_code: "staff", client_id: "" });
   const email = (id: string) => users.data?.find((u) => u.id === id)?.email ?? id.slice(0, 8);
+  // a per-client role (Staff, Manager, Partner …) is refused without the client it is for
+  const needsClient = roles.data?.find((r) => r.code === f.role_code)?.scope === "client";
+  // firm people get firm roles and client people client-portal roles (the server refuses the other kind)
+  const chosen = users.data?.find((u) => u.id === f.user_id);
+  const roleOptions = (roles.data ?? []).filter((r) => !chosen || r.is_client_role !== chosen.is_firm_user);
+  const pickUser = (id: string) => {
+    const u = users.data?.find((x) => x.id === id);
+    setF((x) => ({ ...x, user_id: id, role_code: u && !u.is_firm_user ? "client_viewer" : "staff" }));
+  };
   return (
     <div className="stack">
       <Card title="Assign a role">
         <div className="row" style={{ alignItems: "flex-end" }}>
-          <SelectInput label="User" value={f.user_id} onChange={(e) => setF((x) => ({ ...x, user_id: e.target.value }))} options={[{ value: "", label: "— choose —" }, ...(users.data ?? []).map((u) => ({ value: u.id, label: u.email }))]} />
-          <SelectInput label="Role" value={f.role_code} onChange={(e) => setF((x) => ({ ...x, role_code: e.target.value }))} options={(roles.data ?? []).map((r) => ({ value: r.code, label: r.name }))} />
-          <SelectInput label="Client" value={f.client_id} onChange={(e) => setF((x) => ({ ...x, client_id: e.target.value }))} options={[{ value: "", label: "Tenant-wide" }, ...(clients.data ?? []).map((c) => ({ value: c.id, label: c.name }))]} />
+          <SelectInput label="User" value={f.user_id} onChange={(e) => pickUser(e.target.value)} options={[{ value: "", label: "— choose —" }, ...(users.data ?? []).map((u) => ({ value: u.id, label: u.email }))]} />
+          <SelectInput label="Role" value={f.role_code} onChange={(e) => setF((x) => ({ ...x, role_code: e.target.value }))} options={roleOptions.map((r) => ({ value: r.code, label: r.name }))} />
+          <SelectInput label="Client" value={f.client_id} onChange={(e) => setF((x) => ({ ...x, client_id: e.target.value }))} options={[{ value: "", label: needsClient ? "— choose —" : "Tenant-wide" }, ...(clients.data ?? []).map((c) => ({ value: c.id, label: c.name }))]} />
           <Button
             variant="primary"
-            disabled={!f.user_id}
+            disabled={!f.user_id || (needsClient && !f.client_id)}
             onClick={() => void act("Assign role", (reason) => api("/admin/assignments", { method: "POST", body: { ...f, client_id: f.client_id || null }, reason }), [["admin", "assignments"]], "Role assigned")}
           >
             Assign

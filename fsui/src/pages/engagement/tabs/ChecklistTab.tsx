@@ -37,7 +37,7 @@ export function ChecklistTab({ eng, can }: TabProps) {
       actions={editable ? <Button onClick={() => auto.mutate()} busy={auto.isPending}>Auto-answer from latest check</Button> : undefined}
     >
       <div className="stack">
-        <ProgressBar value={list.length ? answered / list.length : 0} label={answered === list.length && list.length ? "Complete — this gate is met for FINAL_LOCKED" : "Unanswered items block FINAL_LOCKED"} />
+        <ProgressBar value={list.length ? answered / list.length : 0} label={answered === list.length && list.length ? "Complete — the statements can be marked FINAL and locked" : "Answer every item before the statements can be marked FINAL and locked"} />
         {items.isLoading ? <Spinner /> : null}
         <ErrorNotice error={items.error} />
         <div className="table-wrap">

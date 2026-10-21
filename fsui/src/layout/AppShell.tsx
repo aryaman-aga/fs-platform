@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import { useAuth } from "@/auth/AuthContext";
-import { mustChangePassword, navItems, roleCodes } from "@/auth/permissions";
+import { mfaRequired, mustChangePassword, navItems, roleCodes } from "@/auth/permissions";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePrefs } from "@/components/Prefs";
 import { Button, Spinner } from "@/components/ui";
@@ -22,7 +22,8 @@ const ICONS: Record<string, string> = {
 
 function HelpDrawer({ onClose }: { onClose: () => void }) {
   const { pathname } = useLocation();
-  const h = helpFor(pathname);
+  const { me } = useAuth();
+  const h = helpFor(pathname, mfaRequired(me));
   return (
     <aside className="help-drawer" aria-label="Help for this screen">
       <div className="card-header">

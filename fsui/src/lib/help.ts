@@ -10,14 +10,23 @@ export interface HelpEntry {
   controls?: string[];
 }
 
-const HELP: { match: RegExp; entry: HelpEntry }[] = [
+const SESSION_CONTROLS = ["Sessions end after 60 minutes idle (30 for client users) and 12 hours in total.", "Five failed attempts lock the account for 15 minutes."];
+
+/** `withoutMfa`: the entry where the installation signs in with e-mail and password only (no authenticator app). */
+const HELP: { match: RegExp; entry: HelpEntry; withoutMfa?: HelpEntry }[] = [
   {
-    match: /^\/login|^\/mfa|^\/invite|^\/reset-password|^\/forgot-password/,
+    match: /^\/login|^\/signup|^\/mfa|^\/invite|^\/reset-password|^\/forgot-password/,
     entry: {
       title: "Signing in",
       summary: "Every user signs in with a password and a second factor (authenticator app). Recovery codes are shown once when you enrol.",
       steps: ["Enter your firm e-mail and password.", "Enter the 6-digit code from your authenticator app.", "Lost your phone? Use a recovery code, then ask the Firm Admin to reset MFA."],
-      controls: ["Sessions end after 60 minutes idle (30 for client users) and 12 hours in total.", "Five failed attempts lock the account for 15 minutes."],
+      controls: SESSION_CONTROLS,
+    },
+    withoutMfa: {
+      title: "Signing in",
+      summary: "Sign in with your e-mail and password.",
+      steps: ["Enter your e-mail and password.", "New here? “Create an account” on the sign-in page, when it is offered.", "Forgot your password? Use “Forgot password?” on the sign-in page."],
+      controls: SESSION_CONTROLS,
     },
   },
   {
@@ -98,6 +107,12 @@ const HELP: { match: RegExp; entry: HelpEntry }[] = [
       summary: "Users, roles and permissions, access reviews, AI policy, backups, incidents, data-principal requests, releases, usage and health.",
       controls: ["Administrative changes need a reason and a fresh MFA code (step-up).", "Every change is in the hash-chained audit trail."],
     },
+    withoutMfa: {
+      title: "Administration",
+      summary: "Users, roles and permissions, access reviews, AI policy, backups, incidents, data-principal requests, releases, usage and health.",
+      steps: ["Someone who created their own account sees no clients until you give them a role: Users shows them as “No role yet”, Assignments gives the role."],
+      controls: ["Administrative changes need a reason, and your password again if you last confirmed it more than 5 minutes ago.", "Every change is in the hash-chained audit trail."],
+    },
   },
   {
     match: /^\/audit/,
@@ -114,6 +129,8 @@ const DEFAULT: HelpEntry = {
   summary: "Prepare and review Ind AS financial statements with checks, controlled fixes, PDF reconciliation and a full audit trail.",
 };
 
-export function helpFor(pathname: string): HelpEntry {
-  return HELP.find((h) => h.match.test(pathname))?.entry ?? DEFAULT;
+export function helpFor(pathname: string, mfaRequired = true): HelpEntry {
+  const h = HELP.find((x) => x.match.test(pathname));
+  if (!h) return DEFAULT;
+  return (!mfaRequired && h.withoutMfa) || h.entry;
 }

@@ -477,6 +477,12 @@ class FakeEngine(RealEngine):
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
 
+        if mode == "final":  # the real engine's final gate (fscore.pdf.render.final_gate, control C7)
+            from fscore.pdf.render import final_gate
+
+            refusal = final_gate(check_result)
+            if refusal:
+                return RenderResult(ok=False, mode="final", engine="fake", message=refusal)
         c = canvas.Canvas(str(out_path), pagesize=A4)
         c.setFont("Helvetica", 12)
         c.drawString(72, 760, f"Synthetic statements ({mode.upper()}) run {run_id[:8]}")

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { MeLike } from "./permissions";
-import { adminSections, can, isClientUser, navItems, needsMfa, permissionValue, roleCodes } from "./permissions";
+import { adminSections, can, hasNoRole, isClientUser, mfaRequired, navItems, needsMfa, permissionValue, roleCodes } from "./permissions";
 
 function me(perms: Record<string, Record<string, string>>, firm = true, roles: string[] = []): MeLike {
   return {
@@ -36,6 +36,25 @@ describe("permissions", () => {
     expect(needsMfa(staff)).toBe(false);
   });
 
+  it("knows whether an authenticator is required (yes unless the server says no)", () => {
+    expect(mfaRequired({ ...staff, mfa_required: false })).toBe(false);
+    expect(mfaRequired({ ...staff, mfa_required: true })).toBe(true);
+    expect(mfaRequired(staff)).toBe(true);
+    expect(mfaRequired(null)).toBe(true);
+  });
+
+  it("spots a signed-in person with no role in force", () => {
+    const now = new Date("2026-10-22T10:00:00Z");
+    const newcomer = me({ "*": {} });
+    expect(hasNoRole(newcomer, now)).toBe(true);
+    expect(hasNoRole(staff, now)).toBe(false);
+    expect(hasNoRole(firmAdmin, now)).toBe(false);
+    const lapsed = { ...newcomer, assignments: [{ role_code: "staff", client_id: "c1", expires_at: "2026-10-21T10:00:00Z" }] };
+    expect(hasNoRole(lapsed, now)).toBe(true);
+    expect(hasNoRole({ ...lapsed, assignments: [{ role_code: "staff", client_id: "c1", expires_at: "2026-10-23T10:00:00Z" }] }, now)).toBe(false);
+    expect(hasNoRole(null, now)).toBe(false);
+  });
+
   it("lists roles and user type", () => {
     expect(roleCodes(staff)).toEqual(["staff"]);
     expect(isClientUser(client)).toBe(true);
@@ -64,6 +83,15 @@ describe("role-based navigation", () => {
     const labels = navItems(client).map((n) => n.to);
     expect(labels).toEqual(["/portal", "/help", "/release-notes"]);
     expect(adminSections(client)).toEqual([]);
+  });
+
+  it("gives someone without a role a way home and nothing else", () => {
+    const newcomer = me({ "*": {} });
+    expect(navItems(newcomer).map((n) => [n.to, n.label])).toEqual([
+      ["/", "Home"],
+      ["/help", "Help"],
+      ["/release-notes", "Release notes"],
+    ]);
   });
 
   it("gives a system admin operations sections only", () => {

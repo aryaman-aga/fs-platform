@@ -160,6 +160,8 @@ def mfa_reset(user_id: str, request: Request, p: Principal = Depends(require_pri
         raise not_found("user")
     accounts.reset_mfa(db, u, _admin_actor(p, reason))
     db.commit()
+    if not get_state(request).settings.mfa_required:
+        return schemas.OkOut(message="MFA reset; sign-in asks for an authenticator once it is switched on")
     return schemas.OkOut(message="MFA reset; the user enrols a new authenticator at next sign-in")
 
 
